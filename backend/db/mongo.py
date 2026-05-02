@@ -3,6 +3,7 @@ MongoDB Atlas client using Motor (async) for the TruthMates project.
 
 Collections:
   civic_posts — stores scraped RSS post data with timestamps.
+    civic_classified — stores classified civic posts.
 
 Upsert strategy: match on 'link' field to prevent duplicates across scrape runs.
 """
@@ -63,6 +64,39 @@ async def save_posts(posts: list[dict]) -> int:
             continue  # Skip posts without a URL
 
         document = {**post, "scraped_at": now}
+
+        await collection.update_one(
+            filter={"link": link},
+            update={"$set": document},
+            upsert=True,
+        )
+        processed += 1
+
+    return processed
+
+
+async def save_classified_posts(posts: list[dict]) -> int:
+    """
+    Upsert a list of classified civic post dicts into 'civic_classified'.
+
+    Each post is upserted by its 'link' field.
+    A 'classified_at' UTC timestamp is added/updated on every write.
+
+    Returns the number of documents processed.
+    """
+    if not posts:
+        return 0
+
+    collection = get_db()["civic_classified"]
+    now = datetime.now(timezone.utc)
+    processed = 0
+
+    for post in posts:
+        link = post.get("link", "").strip()
+        if not link:
+            continue
+
+        document = {**post, "classified_at": now}
 
         await collection.update_one(
             filter={"link": link},

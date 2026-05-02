@@ -24,8 +24,9 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 from crew.truthmates_crew import TruthMatesCrew
-from db.mongo import ping_db, save_posts
-from models.schemas import CivicPost, ScrapeResponse
+from crew.classifier_crew import CivicClassifierCrew
+from db.mongo import ping_db, save_posts, save_classified_posts
+from models.schemas import CivicPost, ScrapeResponse, ClassifiedPost, ClassifyResponse
 
 # ── Feed URLs (configurable via .env) ────────────────────────────────────────
 
@@ -88,7 +89,7 @@ async def health_check():
     }
 
 
-@app.post("/scrape", response_model=ScrapeResponse, tags=["Scraper"])
+@app.post("/scrape", response_model=ClassifyResponse, tags=["Scraper"])
 async def scrape():
     """
     Trigger the TruthMates CrewAI agent to scrape PIB and MyGov RSS feeds.
@@ -154,7 +155,64 @@ async def scrape():
         # 5. Persist to MongoDB
         await save_posts([p.model_dump() for p in civic_posts])
 
-        return ScrapeResponse(
+        # Auto-trigger classifier after scraping
+        classify_payload = ScrapeResponse(
+            status="success",
+            count=len(civic_posts),
+            posts=civic_posts,
+        )
+        return await classify(classify_payload)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/classify", response_model=ClassifyResponse, tags=["Classifier"])
+async def classify(scrape_response: ScrapeResponse):
+    """
+    Classify scraper output and persist only civic posts.
+
+    Steps:
+      1. Run classifier crew on the scraper posts.
+      2. Filter out non-civic posts.
+      3. Store civic posts in MongoDB.
+      4. Return classified civic posts only.
+    """
+    try:
+        crew_instance = CivicClassifierCrew()
+        posts_json = json.dumps(
+            [p.model_dump() for p in scrape_response.posts],
+            ensure_ascii=True,
+        )
+
+        result = crew_instance.crew().kickoff(inputs={"posts_json": posts_json})
+        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+
+        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+        try:
+            classified_data: list[dict] = json.loads(clean_text)
+        except json.JSONDecodeError:
+            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+            if match:
+                classified_data = json.loads(match.group())
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Classifier returned output that could not be parsed as JSON.",
+                )
+
+        civic_posts: list[ClassifiedPost] = []
+        for item in classified_data:
+            if item.get("label") != "civic":
+                continue
+
+            civic_posts.append(ClassifiedPost(**item))
+
+        await save_classified_posts([p.model_dump() for p in civic_posts])
+
+        return ClassifyResponse(
             status="success",
             count=len(civic_posts),
             posts=civic_posts,

@@ -1,0 +1,27 @@
+classify_posts_task:
+  description: >
+    Classify the provided list of civic posts from the scraper output.
+
+    Input variable:
+    - posts_json: JSON array of post objects
+
+    Use the CivicClassifyTool with the posts_json input. Return ONLY the
+    resulting JSON array from the tool with fields:
+    title, description, link, pub_date, source, scraped_at,
+    label, confidence, language, needs_review.
+  expected_output: >
+    A JSON array of posts with classification metadata. Example:
+    [
+      {
+        "title": "Government launches new scheme",
+        "description": "Clean description",
+        "link": "https://pib.gov.in/...",
+        "pub_date": "2026-05-01T10:00:00",
+        "source": "PIB",
+        "label": "civic",
+        "confidence": 0.92,
+        "language": "en",
+        "needs_review": false
+      }
+    ]
+  agent: civic_classifier

@@ -26,3 +26,22 @@ class ScrapeResponse(BaseModel):
     status: str
     count: int
     posts: list[CivicPost]
+
+
+class ClassifiedPost(CivicPost):
+    """Represents a classified civic post with metadata."""
+
+    label: str = Field(..., description="civic | non-civic")
+    confidence: float = Field(..., description="Model confidence in label")
+    language: str = Field(..., description="Detected language code")
+    needs_review: bool = Field(
+        ..., description="True if confidence below threshold"
+    )
+
+
+class ClassifyResponse(BaseModel):
+    """FastAPI response schema for the /classify endpoint."""
+
+    status: str
+    count: int
+    posts: list[ClassifiedPost]
