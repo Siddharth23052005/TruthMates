@@ -183,7 +183,7 @@ async def classify(scrape_response: ScrapeResponse):
     try:
         crew_instance = CivicClassifierCrew()
         posts_json = json.dumps(
-            [p.model_dump() for p in scrape_response.posts],
+            [p.model_dump(mode="json") for p in scrape_response.posts],
             ensure_ascii=True,
         )
 
