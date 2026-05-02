@@ -1,0 +1,59 @@
+fetch_rss_task:
+  description: >
+    Use the RSSFetchTool to scrape both the PIB and MyGov RSS feeds.
+
+    Feed URLs to fetch:
+    - PIB: {pib_url}
+    - MyGov: {mygov_url}
+
+    For each item in every feed, extract:
+    1. title       — The headline of the post
+    2. description — The full body/summary text (may contain HTML)
+    3. link        — The canonical URL of the post
+    4. pubDate     — The publication date string as it appears in the feed
+    5. source      — The feed name ("PIB" or "MyGov")
+
+    Pass both URLs as a single comma-separated string to the tool.
+    Return the complete raw JSON array of all items from both feeds.
+  expected_output: >
+    A JSON array of raw civic post objects, one per RSS item. Example:
+    [
+      {{
+        "title": "Government launches new scheme",
+        "description": "<p>Full HTML description...</p>",
+        "link": "https://pib.gov.in/...",
+        "pubDate": "Thu, 01 May 2026 10:00:00 +0530",
+        "source": "PIB"
+      }}
+    ]
+  agent: rss_scraper
+
+clean_deduplicate_task:
+  description: >
+    Take the raw JSON array of civic posts provided by the RSS scraper and
+    perform the following cleaning steps:
+
+    1. Strip all HTML tags from the "description" field of every post.
+    2. Normalize the "pubDate" field to ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+       If a date cannot be parsed, set it to null.
+    3. Remove duplicate entries where two posts share the same "link" URL.
+       Keep only the first occurrence.
+    4. Rename "pubDate" to "pub_date" in the final output.
+
+    Use the CleanDedupTool with the raw JSON string from the fetch task.
+    Return only the final cleaned and deduplicated JSON array.
+  expected_output: >
+    A cleaned, deduplicated JSON array of civic posts ready for storage.
+    Example:
+    [
+      {{
+        "title": "Government launches new scheme",
+        "description": "Full description without any HTML tags.",
+        "link": "https://pib.gov.in/...",
+        "pub_date": "2026-05-01T10:00:00",
+        "source": "PIB"
+      }}
+    ]
+  agent: data_cleaner
+  context:
+    - fetch_rss_task

@@ -1,0 +1,38 @@
+node_modules/
+.env/
+env/
+__pycache__/
+*.pyc
+dist/
+build/
+
+
+
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache and tooling artifacts
+*.pyo
+*.pyd
+*.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Backend runtime/generated files
+backend/uploads/
+
+
+# Logs and temp files
+*.log
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local frontend overrides
+.env.local
+
