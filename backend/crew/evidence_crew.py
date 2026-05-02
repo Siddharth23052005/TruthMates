@@ -1,5 +1,5 @@
 """
-CivicClassifierCrew — CrewAI crew that classifies scraped posts.
+EvidenceRetrieverCrew — CrewAI crew that retrieves evidence for claims.
 LLM: Groq LLaMA 3.1 8B (groq/llama-3.1-8b-instant) for testing
 """
 
@@ -10,7 +10,7 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
 from dotenv import load_dotenv
 
-from crew.tools.classify_tool import CivicClassifyTool
+from crew.tools.evidence_tool import EvidenceRetrieveTool
 
 load_dotenv()
 
@@ -18,11 +18,11 @@ _CONFIG_DIR = Path(__file__).parent / "config"
 
 
 @CrewBase
-class CivicClassifierCrew:
-    """Single-agent crew for civic classification."""
+class EvidenceRetrieverCrew:
+    """Single-agent crew for evidence retrieval."""
 
-    agents_config = str(_CONFIG_DIR / "classifier_agents.yaml")
-    tasks_config = str(_CONFIG_DIR / "classifier_tasks.yaml")
+    agents_config = str(_CONFIG_DIR / "evidence_agents.yaml")
+    tasks_config = str(_CONFIG_DIR / "evidence_tasks.yaml")
 
     def _llm(self) -> LLM:
         return LLM(
@@ -32,17 +32,17 @@ class CivicClassifierCrew:
         )
 
     @agent
-    def civic_classifier(self) -> Agent:
+    def evidence_retriever(self) -> Agent:
         return Agent(
-            config=self.agents_config["civic_classifier"],
+            config=self.agents_config["evidence_retriever"],
             llm=self._llm(),
-            tools=[CivicClassifyTool()],
+            tools=[EvidenceRetrieveTool()],
             verbose=True,
         )
 
     @task
-    def classify_posts_task(self) -> Task:
-        return Task(config=self.tasks_config["classify_posts_task"])
+    def retrieve_evidence_task(self) -> Task:
+        return Task(config=self.tasks_config["retrieve_evidence_task"])
 
     @crew
     def crew(self) -> Crew:

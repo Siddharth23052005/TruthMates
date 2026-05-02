@@ -27,3 +27,8 @@ pydantic>=2.7.0
 transformers>=4.44.0
 torch>=2.3.0
 langdetect>=1.0.9
+
+# Evidence retrieval
+sentence-transformers>=3.0.0
+pinecone>=3.0.0
+numpy>=1.26.4

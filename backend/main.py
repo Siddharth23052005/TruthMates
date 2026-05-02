@@ -11,6 +11,7 @@ Run:
   uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
 
+import asyncio
 import json
 import os
 import re
@@ -25,8 +26,16 @@ load_dotenv()
 
 from crew.truthmates_crew import TruthMatesCrew
 from crew.classifier_crew import CivicClassifierCrew
-from db.mongo import ping_db, save_posts, save_classified_posts
-from models.schemas import CivicPost, ScrapeResponse, ClassifiedPost, ClassifyResponse
+from crew.evidence_crew import EvidenceRetrieverCrew
+from db.mongo import ping_db, save_posts, save_classified_posts, save_verified_posts
+from models.schemas import (
+    CivicPost,
+    ScrapeResponse,
+    ClassifiedPost,
+    ClassifyResponse,
+    VerifiedPost,
+    VerifyResponse,
+)
 
 # ── Feed URLs (configurable via .env) ────────────────────────────────────────
 
@@ -75,6 +84,35 @@ app.add_middleware(
 )
 
 
+# ── Retry helpers (Groq rate limits) ─────────────────────────────────────────
+
+_RETRY_BASE_DELAY_SECONDS = 2
+_MAX_RETRIES = 3
+
+
+def _is_rate_limit_error(message: str) -> bool:
+    lowered = message.lower()
+    return (
+        "rate limit" in lowered
+        or "rate_limit" in lowered
+        or "rate_limit_exceeded" in lowered
+    )
+
+
+async def _kickoff_with_retry(crew_instance, inputs: dict):
+    retries = 0
+    while True:
+        try:
+            return crew_instance.kickoff(inputs=inputs)
+        except Exception as exc:
+            if _is_rate_limit_error(str(exc)) and retries < _MAX_RETRIES:
+                delay = _RETRY_BASE_DELAY_SECONDS * (2 ** retries)
+                retries += 1
+                await asyncio.sleep(delay)
+                continue
+            raise
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", tags=["Health"])
@@ -89,7 +127,7 @@ async def health_check():
     }
 
 
-@app.post("/scrape", response_model=ClassifyResponse, tags=["Scraper"])
+@app.post("/scrape", response_model=VerifyResponse, tags=["Scraper"])
 async def scrape():
     """
     Trigger the TruthMates CrewAI agent to scrape PIB and MyGov RSS feeds.
@@ -98,16 +136,18 @@ async def scrape():
       1. Kick off the crew with the configured RSS URLs.
       2. Parse the JSON output from the data_cleaner agent.
       3. Persist all posts to MongoDB (upsert by link).
-      4. Return the structured response.
+    4. Auto-trigger classification and evidence retrieval.
+    5. Return verified civic posts only.
     """
     try:
         # 1. Run the crew
         crew_instance = TruthMatesCrew()
-        result = crew_instance.crew().kickoff(
-            inputs={
+        result = await _kickoff_with_retry(
+            crew_instance.crew(),
+            {
                 "pib_url": PIB_RSS_URL,
                 "mygov_url": MYGOV_RSS_URL,
-            }
+            },
         )
 
         # 2. Extract raw text from CrewOutput
@@ -169,7 +209,7 @@ async def scrape():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.post("/classify", response_model=ClassifyResponse, tags=["Classifier"])
+@app.post("/classify", response_model=VerifyResponse, tags=["Classifier"])
 async def classify(scrape_response: ScrapeResponse):
     """
     Classify scraper output and persist only civic posts.
@@ -178,7 +218,8 @@ async def classify(scrape_response: ScrapeResponse):
       1. Run classifier crew on the scraper posts.
       2. Filter out non-civic posts.
       3. Store civic posts in MongoDB.
-      4. Return classified civic posts only.
+    4. Auto-trigger evidence retrieval.
+    5. Return verified civic posts only.
     """
     try:
         crew_instance = CivicClassifierCrew()
@@ -187,7 +228,10 @@ async def classify(scrape_response: ScrapeResponse):
             ensure_ascii=True,
         )
 
-        result = crew_instance.crew().kickoff(inputs={"posts_json": posts_json})
+        result = await _kickoff_with_retry(
+            crew_instance.crew(),
+            {"posts_json": posts_json},
+        )
         raw_text: str = result.raw if hasattr(result, "raw") else str(result)
 
         clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
@@ -212,10 +256,66 @@ async def classify(scrape_response: ScrapeResponse):
 
         await save_classified_posts([p.model_dump() for p in civic_posts])
 
-        return ClassifyResponse(
+        verify_payload = ClassifyResponse(
             status="success",
             count=len(civic_posts),
             posts=civic_posts,
+        )
+        return await verify(verify_payload)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/verify", response_model=VerifyResponse, tags=["Verifier"])
+async def verify(classify_response: ClassifyResponse):
+    """
+    Retrieve evidence for classified civic posts.
+
+    Steps:
+      1. Run evidence retriever crew on classified posts.
+      2. Label posts as verified/unverified based on matches.
+      3. Store verification results in MongoDB.
+      4. Return verified posts only.
+    """
+    try:
+        crew_instance = EvidenceRetrieverCrew()
+        posts_json = json.dumps(
+            [p.model_dump(mode="json") for p in classify_response.posts],
+            ensure_ascii=True,
+        )
+
+        result = await _kickoff_with_retry(
+            crew_instance.crew(),
+            {"posts_json": posts_json},
+        )
+        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+
+        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+        try:
+            verified_data: list[dict] = json.loads(clean_text)
+        except json.JSONDecodeError:
+            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+            if match:
+                verified_data = json.loads(match.group())
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Verifier returned output that could not be parsed as JSON.",
+                )
+
+        verified_posts: list[VerifiedPost] = []
+        for item in verified_data:
+            verified_posts.append(VerifiedPost(**item))
+
+        await save_verified_posts([p.model_dump() for p in verified_posts])
+
+        return VerifyResponse(
+            status="success",
+            count=len(verified_posts),
+            posts=verified_posts,
         )
 
     except HTTPException:

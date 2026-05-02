@@ -45,3 +45,27 @@ class ClassifyResponse(BaseModel):
     status: str
     count: int
     posts: list[ClassifiedPost]
+
+
+class EvidenceMatch(BaseModel):
+    """Represents a matched fact for a claim."""
+
+    fact_text: str = Field(..., description="Matched fact text")
+    similarity: float = Field(..., description="Similarity score 0-1")
+    source_url: str = Field(..., description="Source URL for the fact")
+    source_type: str = Field(..., description="pinecone | google_fact_check")
+
+
+class VerifiedPost(ClassifiedPost):
+    """Represents a verified post with evidence matches."""
+
+    verification_label: str = Field(..., description="verified | unverified")
+    matches: list[EvidenceMatch]
+
+
+class VerifyResponse(BaseModel):
+    """FastAPI response schema for the /verify endpoint."""
+
+    status: str
+    count: int
+    posts: list[VerifiedPost]

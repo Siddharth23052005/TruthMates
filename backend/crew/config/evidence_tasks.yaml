@@ -1,0 +1,38 @@
+retrieve_evidence_task:
+  description: >
+    Retrieve evidence for the provided classified civic posts.
+
+    Input variable:
+    - posts_json: JSON array of classified post objects
+
+    Use the EvidenceRetrieveTool with posts_json input. Return ONLY the
+    resulting JSON array with fields:
+    title, description, link, pub_date, source, scraped_at,
+    label, confidence, language, needs_review,
+    verification_label, matches.
+    Do not call any external tools or web search (including brave_search).
+  expected_output: >
+    A JSON array of verified posts with evidence matches. Example:
+    [
+      {
+        "title": "Government launches new scheme",
+        "description": "Clean description",
+        "link": "https://pib.gov.in/...",
+        "pub_date": "2026-05-01T10:00:00",
+        "source": "PIB",
+        "label": "civic",
+        "confidence": 0.92,
+        "language": "en",
+        "needs_review": false,
+        "verification_label": "verified",
+        "matches": [
+          {
+            "fact_text": "Verified fact text",
+            "similarity": 0.82,
+            "source_url": "https://pib.gov.in/...",
+            "source_type": "pinecone"
+          }
+        ]
+      }
+    ]
+  agent: evidence_retriever

@@ -15,6 +15,7 @@ fetch_rss_task:
 
     Pass both URLs as a single comma-separated string to the tool.
     Return the complete raw JSON array of all items from both feeds.
+    Do not call any external tools or web search (including brave_search).
   expected_output: >
     A JSON array of raw civic post objects, one per RSS item. Example:
     [
@@ -42,6 +43,7 @@ clean_deduplicate_task:
 
     Use the CleanDedupTool with the raw JSON string from the fetch task.
     Return only the final cleaned and deduplicated JSON array.
+    Do not call any external tools or web search (including brave_search).
   expected_output: >
     A cleaned, deduplicated JSON array of civic posts ready for storage.
     Example:

@@ -4,6 +4,7 @@ rss_scraper:
     Fetch and extract all news items from the PIB and MyGov RSS feeds.
     Return a complete, structured list of posts including title, description,
     link, publication date, and source feed name.
+    Do not use any external tools or web search; only use the provided tool.
   backstory: >
     You are a seasoned data extraction specialist with deep expertise in parsing
     government press releases and civic announcements from XML-based RSS feeds.
@@ -19,6 +20,7 @@ data_cleaner:
     from descriptions, normalize publication dates to ISO 8601 format, and
     remove any duplicate entries based on the post URL (link field).
     Return a clean, deduplicated JSON array ready for storage and display.
+    Do not use any external tools or web search; only use the provided tool.
   backstory: >
     You are a data quality engineer who has spent years ensuring government
     datasets are clean, consistent, and reliable. You have an eye for

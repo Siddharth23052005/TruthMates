@@ -1,0 +1,182 @@
+[
+  {
+    "id": "pib_fact_001",
+    "text": "PM Kisan Samman Nidhi provides Rs 6000 per year to farmers in 3 installments of Rs 2000",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_002",
+    "text": "PM Surya Ghar Muft Bijli Yojana provides 300 units free electricity per month via rooftop solar",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_003",
+    "text": "Ayushman Bharat provides health cover of Rs 5 lakh per family per year",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_004",
+    "text": "Aadhaar card is not mandatory for buying or selling property in India",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_005",
+    "text": "PM Awas Yojana Urban 2.0 targets 1 crore houses for urban poor",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_006",
+    "text": "One Nation One Ration Card allows migrants to access PDS from any state",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_007",
+    "text": "PM Mudra Yojana provides loans up to Rs 10 lakh for non-corporate small businesses",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_008",
+    "text": "Jal Jeevan Mission aims to provide tap water to every rural household by 2024",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_009",
+    "text": "PM Garib Kalyan Anna Yojana provides 5kg free foodgrain per person per month",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_010",
+    "text": "Sukanya Samriddhi Yojana interest rate is 8.2% per annum for girl child savings",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_011",
+    "text": "E-Shram portal registration is free and gives Rs 2 lakh accident insurance",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_012",
+    "text": "PM Vishwakarma Yojana provides Rs 3 lakh loan at 5% interest to artisans",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_013",
+    "text": "Agniveer scheme recruits soldiers for 4 years with Rs 11.71 lakh corpus on exit",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_014",
+    "text": "National Pension System minimum contribution is Rs 500 per month",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_015",
+    "text": "PM Ujjwala Yojana provides free LPG connection to BPL women",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_016",
+    "text": "Voter ID and Aadhaar linking is voluntary not mandatory",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_017",
+    "text": "Digital Rupee (e-RUPI) is issued by RBI and is legal tender",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_018",
+    "text": "PM SVANidhi provides Rs 10000 street vendor loans with no collateral",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_019",
+    "text": "Startup India offers 3 year tax exemption for DPIIT recognized startups",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_020",
+    "text": "PM Fasal Bima Yojana premium for kharif crops is maximum 2% for farmers",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_021",
+    "text": "Right to Education guarantees free education for children aged 6 to 14",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_022",
+    "text": "PM Jan Dhan accounts have zero minimum balance requirement",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_023",
+    "text": "Skill India Mission trained over 1.4 crore candidates under PMKVY",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_024",
+    "text": "National Health Mission provides free medicines at government hospitals",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_025",
+    "text": "Beti Bachao Beti Padhao scheme operates in 405 districts across India",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_026",
+    "text": "PM Kaushal Vikas Yojana 4.0 covers industry 4.0 skills like AI and robotics",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_027",
+    "text": "Atal Pension Yojana guarantees pension of Rs 1000 to 5000 per month after age 60",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_028",
+    "text": "GeM portal mandatory for all central government procurement above Rs 25000",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_029",
+    "text": "UDAN scheme targets connecting 100 unserved airports with affordable flights",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  },
+  {
+    "id": "pib_fact_030",
+    "text": "PM CARES Fund is a public charitable trust not part of Consolidated Fund of India",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-verified"
+  }
+]
