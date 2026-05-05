@@ -88,6 +88,9 @@ app.add_middleware(
 
 _RETRY_BASE_DELAY_SECONDS = 2
 _MAX_RETRIES = 3
+_PIPELINE_DELAY_SECONDS = 3
+_MAX_POSTS_PER_RUN = 10
+_MAX_DESCRIPTION_CHARS = 300
 
 
 def _is_rate_limit_error(message: str) -> bool:
@@ -179,10 +182,14 @@ async def scrape():
         civic_posts: list[CivicPost] = []
         for item in posts_data:
             try:
+                description = (item.get("description", "") or "").strip()
+                if len(description) > _MAX_DESCRIPTION_CHARS:
+                    description = description[:_MAX_DESCRIPTION_CHARS].rstrip()
+
                 civic_posts.append(
                     CivicPost(
                         title=item.get("title", ""),
-                        description=item.get("description", ""),
+                        description=description,
                         link=item.get("link", ""),
                         pub_date=item.get("pub_date"),
                         source=item.get("source", "Unknown"),
@@ -192,10 +199,13 @@ async def scrape():
             except Exception:
                 continue  # Skip malformed individual items
 
+        civic_posts = civic_posts[:_MAX_POSTS_PER_RUN]
+
         # 5. Persist to MongoDB
         await save_posts([p.model_dump() for p in civic_posts])
 
         # Auto-trigger classifier after scraping
+        await asyncio.sleep(_PIPELINE_DELAY_SECONDS)
         classify_payload = ScrapeResponse(
             status="success",
             count=len(civic_posts),
@@ -223,10 +233,15 @@ async def classify(scrape_response: ScrapeResponse):
     """
     try:
         crew_instance = CivicClassifierCrew()
-        posts_json = json.dumps(
-            [p.model_dump(mode="json") for p in scrape_response.posts],
-            ensure_ascii=True,
-        )
+        trimmed_posts: list[dict] = []
+        for post in scrape_response.posts[:_MAX_POSTS_PER_RUN]:
+            data = post.model_dump(mode="json")
+            description = (data.get("description") or "").strip()
+            if len(description) > _MAX_DESCRIPTION_CHARS:
+                data["description"] = description[:_MAX_DESCRIPTION_CHARS].rstrip()
+            trimmed_posts.append(data)
+
+        posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
         result = await _kickoff_with_retry(
             crew_instance.crew(),
@@ -256,6 +271,7 @@ async def classify(scrape_response: ScrapeResponse):
 
         await save_classified_posts([p.model_dump() for p in civic_posts])
 
+        await asyncio.sleep(_PIPELINE_DELAY_SECONDS)
         verify_payload = ClassifyResponse(
             status="success",
             count=len(civic_posts),
@@ -282,10 +298,15 @@ async def verify(classify_response: ClassifyResponse):
     """
     try:
         crew_instance = EvidenceRetrieverCrew()
-        posts_json = json.dumps(
-            [p.model_dump(mode="json") for p in classify_response.posts],
-            ensure_ascii=True,
-        )
+        trimmed_posts: list[dict] = []
+        for post in classify_response.posts[:_MAX_POSTS_PER_RUN]:
+            data = post.model_dump(mode="json")
+            description = (data.get("description") or "").strip()
+            if len(description) > _MAX_DESCRIPTION_CHARS:
+                data["description"] = description[:_MAX_DESCRIPTION_CHARS].rstrip()
+            trimmed_posts.append(data)
+
+        posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
         result = await _kickoff_with_retry(
             crew_instance.crew(),

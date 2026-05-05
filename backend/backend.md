@@ -95,6 +95,10 @@ Verification adds:
 3. `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
 4. `curl -X POST http://localhost:8000/scrape`
 
+## Environment
+- Virtual environment manager: uv
+- uv version: 0.11.8
+
 ## Progress Log (2026-05-02)
 - Added Civic Classifier Crew (Groq LLaMA 3.3 70B + CivicClassifyTool).
 - Implemented BERT/IndicBERT embedding-based classification with confidence threshold.
@@ -108,3 +112,4 @@ Verification adds:
 - Replaced placeholder facts with 30 PIB-verified facts and added source_tag metadata.
 - Added exponential backoff retry for Groq rate limits and switched to llama-3.1-8b-instant for testing.
 - Reinforced no-external-tools instructions to prevent rogue tool calls.
+- Added limits: truncate descriptions to 300 chars, cap 10 posts per run, and insert 3s delays between pipeline stages.
