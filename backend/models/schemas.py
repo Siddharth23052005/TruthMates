@@ -92,3 +92,37 @@ class GenerateResponse(BaseModel):
     status: str
     count: int
     posts: list[CounterInfoPost]
+
+
+class ValidationFlags(BaseModel):
+    """Flags produced by the output validator."""
+
+    contradicts_pib_fact: bool
+    invalid_source_url: bool
+    trust_score_mismatch: bool
+    missing_hindi: bool
+    hallucinated_stats: bool
+
+
+class ValidatedPost(BaseModel):
+    """Represents a validated output with final verdict."""
+
+    claim: str
+    verdict: str
+    trust_score: float
+    counter_english: str
+    counter_hindi: str
+    sources: list[str]
+    flags: ValidationFlags
+    validated_at: Optional[datetime] = Field(
+        default_factory=datetime.utcnow,
+        description="UTC timestamp when this record was validated",
+    )
+
+
+class ValidateResponse(BaseModel):
+    """FastAPI response schema for the /validate endpoint."""
+
+    status: str
+    count: int
+    posts: list[ValidatedPost]

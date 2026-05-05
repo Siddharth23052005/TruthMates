@@ -1,7 +1,7 @@
 # TruthMates Backend Notes
 
 ## Overview
-TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, and generates counter-info corrections with trust scores. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, and counter-info generation.
+TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, generates counter-info corrections with trust scores, and validates outputs. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, counter-info, and validation.
 
 ## Current Architecture
 1. FastAPI `POST /scrape` triggers the CrewAI scraping workflow.
@@ -14,7 +14,9 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 8. Verification results are stored in MongoDB with `verified_at`.
 9. Counter-info generator creates corrections, Hindi translations, and trust scores.
 10. Counter-info results are stored in MongoDB with `generated_at`.
-11. The API returns `{status, count, posts}` with counter-info results.
+11. Output validator checks sources, contradictions, trust-score logic, and Hindi presence.
+12. Validated results are stored in MongoDB with `validated_at`.
+13. The API returns `{status, count, posts}` with validated outputs.
 
 ## Key Files
 - `main.py`: FastAPI app, routes, CORS, crew kickoff, JSON parsing, persistence.
@@ -22,16 +24,20 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 - `crew/classifier_crew.py`: CrewAI classifier crew (CivicClassifyTool).
 - `crew/evidence_crew.py`: CrewAI evidence retriever crew (EvidenceRetrieveTool).
 - `crew/counter_info_crew.py`: CrewAI counter-info generator crew.
+- `crew/output_validator_crew.py`: CrewAI output validator crew.
 - `crew/config/agents.yaml`: Agent roles, goals, and backstories.
 - `crew/config/tasks.yaml`: Task flow and expected outputs.
 - `crew/config/classifier_agents.yaml`: Classifier agent config.
 - `crew/config/classifier_tasks.yaml`: Classifier task config.
 - `crew/config/counter_agents.yaml`: Counter-info agent config.
 - `crew/config/counter_tasks.yaml`: Counter-info task config.
+- `crew/config/validator_agents.yaml`: Output validator agent config.
+- `crew/config/validator_tasks.yaml`: Output validator task config.
 - `crew/tools/rss_tool.py`: RSS fetch tool (requests + BeautifulSoup XML parser).
 - `crew/tools/clean_tool.py`: Cleaning + dedup tool (HTML strip, ISO dates).
 - `crew/tools/classify_tool.py`: BERT/IndicBERT classifier tool.
 - `crew/tools/evidence_tool.py`: Pinecone + Google Fact Check evidence retriever.
+- `crew/tools/url_check_tool.py`: URL reachability checker for validation.
 - `crew/data/verified_facts.json`: Seed PIB facts (replace placeholders with real facts).
 - `db/mongo.py`: Motor async client, upsert by `link`, `scraped_at` timestamp.
 - `models/schemas.py`: Pydantic models for posts and API response.
@@ -50,10 +56,11 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 
 ## Endpoints
 - `GET /`: Health check and DB connectivity status.
-- `POST /scrape`: Runs scrape + clean + classify + verify + generate, returns counter-info posts.
-- `POST /classify`: Classifies a provided scraper output and triggers verify + generate.
-- `POST /verify`: Retrieves evidence and triggers counter-info generation.
-- `POST /generate`: Generates counter-info corrections and trust scores.
+- `POST /scrape`: Runs scrape + clean + classify + verify + generate + validate.
+- `POST /classify`: Classifies a provided scraper output and triggers verify + generate + validate.
+- `POST /verify`: Retrieves evidence and triggers generate + validate.
+- `POST /generate`: Generates counter-info and triggers validation.
+- `POST /validate`: Validates counter-info outputs and returns final verdicts.
 
 ## Data Contract (Scrape Output)
 Each post has:
@@ -84,6 +91,10 @@ Counter-info adds:
 - `trust_score`: 0-100 score
 - `trust_label`: Red | Yellow | Green
 
+Validation adds:
+- `verdict`: TRUE | FALSE | MISLEADING | UNVERIFIED
+- `flags`: contradiction, invalid URL, trust mismatch, missing Hindi, hallucinated stats
+
 ## MongoDB Details
 - Collection: `civic_posts`
 - Upsert key: `link`
@@ -100,6 +111,10 @@ Counter-info adds:
 - Collection: `civic_counter_info`
 - Upsert key: `link`
 - Each generation overwrites existing data for the same link and updates `generated_at`.
+
+- Collection: `civic_validated`
+- Upsert key: `claim`
+- Each validation overwrites existing data for the same claim and updates `validated_at`.
 
 ## Notes on Feed Handling
 - PIB and MyGov RSS URLs are configurable via `.env`.
@@ -130,3 +145,5 @@ Counter-info adds:
 - Reinforced no-external-tools instructions to prevent rogue tool calls.
 - Added limits: truncate descriptions to 300 chars, cap 10 posts per run, and insert 3s delays between pipeline stages.
 - Added Counter-Info Generator Crew and /generate endpoint with trust score and Hindi translation.
+- Added Output Validator Crew and /validate endpoint with retry logic.
+- Updated validator verdict rules and trust-score alignment.

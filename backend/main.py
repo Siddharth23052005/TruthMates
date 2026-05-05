@@ -22,6 +22,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from guardrails import Guard
+from pydantic import BaseModel
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 load_dotenv()
@@ -30,12 +32,14 @@ from crew.truthmates_crew import TruthMatesCrew
 from crew.classifier_crew import CivicClassifierCrew
 from crew.evidence_crew import EvidenceRetrieverCrew
 from crew.counter_info_crew import CounterInfoCrew
+from crew.output_validator_crew import OutputValidatorCrew
 from db.mongo import (
     ping_db,
     save_posts,
     save_classified_posts,
     save_verified_posts,
     save_counter_info_posts,
+    save_validated_posts,
 )
 from models.schemas import (
     CivicPost,
@@ -46,6 +50,9 @@ from models.schemas import (
     VerifyResponse,
     CounterInfoPost,
     GenerateResponse,
+    ValidateResponse,
+    ValidatedPost,
+    ValidationFlags,
 )
 
 # ── Feed URLs (configurable via .env) ────────────────────────────────────────
@@ -104,6 +111,7 @@ _MAX_POSTS_PER_RUN = 10
 _MAX_DESCRIPTION_CHARS = 300
 _TRANSLATION_MODEL = "ai4bharat/indictrans2-en-hi"
 _MAX_TRANSLATION_TOKENS = 256
+_VALIDATION_MAX_RETRIES = 2
 
 
 def _is_rate_limit_error(message: str) -> bool:
@@ -216,6 +224,15 @@ def _compute_trust_score(post: VerifiedPost) -> tuple[float, str]:
     return trust_score, _trust_label(trust_score)
 
 
+def _sources_from_matches(matches: list) -> list[str]:
+    sources: list[str] = []
+    for match in matches:
+        url = getattr(match, "source_url", "") or ""
+        if url and url not in sources:
+            sources.append(url)
+    return sources
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", tags=["Health"])
@@ -230,7 +247,7 @@ async def health_check():
     }
 
 
-@app.post("/scrape", response_model=GenerateResponse, tags=["Scraper"])
+@app.post("/scrape", response_model=ValidateResponse, tags=["Scraper"])
 async def scrape():
     """
     Trigger the TruthMates CrewAI agent to scrape PIB and MyGov RSS feeds.
@@ -239,8 +256,8 @@ async def scrape():
       1. Kick off the crew with the configured RSS URLs.
       2. Parse the JSON output from the data_cleaner agent.
       3. Persist all posts to MongoDB (upsert by link).
-    4. Auto-trigger classification, evidence retrieval, and counter-info.
-    5. Return counter-info results.
+    4. Auto-trigger classification, evidence retrieval, counter-info, and validation.
+    5. Return validated outputs.
     """
     try:
         # 1. Run the crew
@@ -319,7 +336,7 @@ async def scrape():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.post("/classify", response_model=GenerateResponse, tags=["Classifier"])
+@app.post("/classify", response_model=ValidateResponse, tags=["Classifier"])
 async def classify(scrape_response: ScrapeResponse):
     """
     Classify scraper output and persist only civic posts.
@@ -328,8 +345,8 @@ async def classify(scrape_response: ScrapeResponse):
       1. Run classifier crew on the scraper posts.
       2. Filter out non-civic posts.
       3. Store civic posts in MongoDB.
-    4. Auto-trigger evidence retrieval and counter-info.
-    5. Return counter-info results.
+    4. Auto-trigger evidence retrieval, counter-info, and validation.
+    5. Return validated outputs.
     """
     try:
         crew_instance = CivicClassifierCrew()
@@ -385,7 +402,7 @@ async def classify(scrape_response: ScrapeResponse):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.post("/verify", response_model=GenerateResponse, tags=["Verifier"])
+@app.post("/verify", response_model=ValidateResponse, tags=["Verifier"])
 async def verify(classify_response: ClassifyResponse):
     """
     Retrieve evidence for classified civic posts.
@@ -394,8 +411,8 @@ async def verify(classify_response: ClassifyResponse):
       1. Run evidence retriever crew on classified posts.
       2. Label posts as verified/unverified based on matches.
       3. Store verification results in MongoDB.
-    4. Auto-trigger counter-info generation.
-    5. Return counter-info results.
+    4. Auto-trigger counter-info generation and validation.
+    5. Return validated outputs.
     """
     try:
         crew_instance = EvidenceRetrieverCrew()
@@ -448,7 +465,183 @@ async def verify(classify_response: ClassifyResponse):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.post("/generate", response_model=GenerateResponse, tags=["CounterInfo"])
+async def _run_generate(verify_response: VerifyResponse) -> list[CounterInfoPost]:
+    crew_instance = CounterInfoCrew()
+    trimmed_posts: list[dict] = []
+    for post in verify_response.posts[:_MAX_POSTS_PER_RUN]:
+        data = post.model_dump(mode="json")
+        description = (data.get("description") or "").strip()
+        if len(description) > _MAX_DESCRIPTION_CHARS:
+            data["description"] = description[:_MAX_DESCRIPTION_CHARS].rstrip()
+        data["matches"] = (data.get("matches") or [])[:3]
+        trimmed_posts.append(data)
+
+    posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
+
+    result = await _kickoff_with_retry(
+        crew_instance.crew(),
+        {"posts_json": posts_json},
+    )
+    raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+
+    clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+    try:
+        correction_data: list[dict] = json.loads(clean_text)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+        if match:
+            correction_data = json.loads(match.group())
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail="Generator returned output that could not be parsed as JSON.",
+            )
+
+    corrections_by_link: dict[str, str] = {}
+    for item in correction_data:
+        link = (item.get("link") or "").strip()
+        body = (item.get("correction_body") or "").strip()
+        if link and body:
+            corrections_by_link[link] = body
+
+    counter_posts: list[CounterInfoPost] = []
+    for post in verify_response.posts[:_MAX_POSTS_PER_RUN]:
+        source_url = _select_source_url(post.matches)
+        source_text = source_url or "no official source found"
+
+        is_verified = post.verification_label == "verified" and bool(source_url)
+        correction_body = corrections_by_link.get(post.link, "").strip()
+
+        if not is_verified:
+            correction_body = "No official source found for this claim."
+        elif not correction_body:
+            correction_body = "Official sources confirm this claim."
+
+        correction_body = _trim_sentences(correction_body, 3)
+
+        correction_en = f"{correction_body} Source: {source_text}"
+        correction_hi_body = _translate_en_to_hi(correction_body)
+        correction_hi = f"{correction_hi_body} Source: {source_text}"
+
+        trust_score, trust_label = _compute_trust_score(post)
+
+        counter_posts.append(
+            CounterInfoPost(
+                **post.model_dump(),
+                correction_en=correction_en,
+                correction_hi=correction_hi,
+                trust_score=trust_score,
+                trust_label=trust_label,
+            )
+        )
+
+    await save_counter_info_posts([p.model_dump() for p in counter_posts])
+    return counter_posts
+
+
+class _ValidationItem(BaseModel):
+    link: str
+    verdict: str
+    flags: ValidationFlags
+
+
+class _ValidationPayload(BaseModel):
+    items: list[_ValidationItem]
+
+
+async def _run_validate(counter_posts: list[CounterInfoPost]) -> ValidateResponse:
+    crew_instance = OutputValidatorCrew()
+
+    payload_items = []
+    for post in counter_posts[:_MAX_POSTS_PER_RUN]:
+        payload_items.append(post.model_dump(mode="json"))
+
+    posts_json = json.dumps(payload_items, ensure_ascii=True)
+
+    result = await _kickoff_with_retry(
+        crew_instance.crew(),
+        {"posts_json": posts_json},
+    )
+    raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+    clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+
+    validated_payload = None
+    if hasattr(Guard, "from_pydantic"):
+        try:
+            guard = Guard.from_pydantic(_ValidationPayload)
+            outcome = guard.parse(clean_text)
+            validated_payload = outcome.validated_output
+        except Exception:
+            validated_payload = None
+
+    if validated_payload is None:
+        try:
+            parsed = _ValidationPayload.model_validate_json(clean_text)
+            validated_payload = parsed.model_dump()
+        except Exception:
+            try:
+                validated_payload = json.loads(clean_text)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Validator returned output that could not be parsed as JSON.",
+                ) from exc
+
+    if hasattr(validated_payload, "model_dump"):
+        validated_payload = validated_payload.model_dump()
+
+    if isinstance(validated_payload, dict) and "items" in validated_payload:
+        items = validated_payload["items"]
+    else:
+        items = validated_payload
+
+    flags_by_link: dict[str, ValidationFlags] = {}
+    verdict_by_link: dict[str, str] = {}
+    for item in items or []:
+        try:
+            parsed = _ValidationItem(**item)
+            flags_by_link[parsed.link] = parsed.flags
+            verdict_by_link[parsed.link] = parsed.verdict
+        except Exception:
+            continue
+
+    validated_posts: list[ValidatedPost] = []
+    for post in counter_posts[:_MAX_POSTS_PER_RUN]:
+        flags = flags_by_link.get(
+            post.link,
+            ValidationFlags(
+                contradicts_pib_fact=False,
+                invalid_source_url=False,
+                trust_score_mismatch=False,
+                missing_hindi=False,
+                hallucinated_stats=False,
+            ),
+        )
+        verdict = verdict_by_link.get(post.link, "UNVERIFIED")
+        sources = _sources_from_matches(post.matches)
+
+        validated_posts.append(
+            ValidatedPost(
+                claim=post.title,
+                verdict=verdict,
+                trust_score=post.trust_score,
+                counter_english=post.correction_en,
+                counter_hindi=post.correction_hi,
+                sources=sources,
+                flags=flags,
+            )
+        )
+
+    await save_validated_posts([p.model_dump() for p in validated_posts])
+
+    return ValidateResponse(
+        status="success",
+        count=len(validated_posts),
+        posts=validated_posts,
+    )
+
+
+@app.post("/generate", response_model=ValidateResponse, tags=["CounterInfo"])
 async def generate(verify_response: VerifyResponse):
     """
     Generate counter-info corrections for verified posts.
@@ -458,84 +651,73 @@ async def generate(verify_response: VerifyResponse):
       2. Translate corrections to Hindi using IndicTrans2.
       3. Compute trust score and label.
       4. Store counter-info results in MongoDB.
+      5. Auto-trigger validation.
     """
     try:
-        crew_instance = CounterInfoCrew()
-        trimmed_posts: list[dict] = []
-        for post in verify_response.posts[:_MAX_POSTS_PER_RUN]:
-            data = post.model_dump(mode="json")
-            description = (data.get("description") or "").strip()
-            if len(description) > _MAX_DESCRIPTION_CHARS:
-                data["description"] = description[:_MAX_DESCRIPTION_CHARS].rstrip()
-            data["matches"] = (data.get("matches") or [])[:3]
-            trimmed_posts.append(data)
+        counter_posts = await _run_generate(verify_response)
+        return await validate(GenerateResponse(status="success", count=len(counter_posts), posts=counter_posts))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-        posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
-        result = await _kickoff_with_retry(
-            crew_instance.crew(),
-            {"posts_json": posts_json},
-        )
-        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+@app.post("/validate", response_model=ValidateResponse, tags=["Validator"])
+async def validate(generate_response: GenerateResponse):
+    """
+    Validate counter-info outputs and retry generation if needed.
 
-        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
-        try:
-            correction_data: list[dict] = json.loads(clean_text)
-        except json.JSONDecodeError:
-            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
-            if match:
-                correction_data = json.loads(match.group())
-            else:
-                raise HTTPException(
-                    status_code=502,
-                    detail="Generator returned output that could not be parsed as JSON.",
+    Steps:
+      1. Run output validator crew.
+      2. If any flags triggered, retry counter-info generation (max 2 retries).
+      3. Store validated outputs in MongoDB.
+    """
+    try:
+        counter_posts = generate_response.posts
+
+        for attempt in range(_VALIDATION_MAX_RETRIES + 1):
+            validation_response = await _run_validate(counter_posts)
+            flagged_links = {
+                post.claim
+                for post in validation_response.posts
+                if any(
+                    [
+                        post.flags.contradicts_pib_fact,
+                        post.flags.invalid_source_url,
+                        post.flags.trust_score_mismatch,
+                        post.flags.missing_hindi,
+                        post.flags.hallucinated_stats,
+                    ]
                 )
+            }
 
-        corrections_by_link: dict[str, str] = {}
-        for item in correction_data:
-            link = (item.get("link") or "").strip()
-            body = (item.get("correction_body") or "").strip()
-            if link and body:
-                corrections_by_link[link] = body
+            if not flagged_links or attempt >= _VALIDATION_MAX_RETRIES:
+                return validation_response
 
-        counter_posts: list[CounterInfoPost] = []
-        for post in verify_response.posts[:_MAX_POSTS_PER_RUN]:
-            source_url = _select_source_url(post.matches)
-            source_text = source_url or "no official source found"
-
-            is_verified = post.verification_label == "verified" and bool(source_url)
-            correction_body = corrections_by_link.get(post.link, "").strip()
-
-            if not is_verified:
-                correction_body = "No official source found for this claim."
-            elif not correction_body:
-                correction_body = "Official sources confirm this claim."
-
-            correction_body = _trim_sentences(correction_body, 3)
-
-            correction_en = f"{correction_body} Source: {source_text}"
-            correction_hi_body = _translate_en_to_hi(correction_body)
-            correction_hi = f"{correction_hi_body} Source: {source_text}"
-
-            trust_score, trust_label = _compute_trust_score(post)
-
-            counter_posts.append(
-                CounterInfoPost(
-                    **post.model_dump(),
-                    correction_en=correction_en,
-                    correction_hi=correction_hi,
-                    trust_score=trust_score,
-                    trust_label=trust_label,
-                )
+            # Retry counter-info generation for flagged posts only
+            retry_posts = [
+                post for post in generate_response.posts if post.title in flagged_links
+            ]
+            verify_payload = VerifyResponse(
+                status="retry",
+                count=len(retry_posts),
+                posts=[
+                    VerifiedPost(
+                        **p.model_dump(
+                            exclude={
+                                "correction_en",
+                                "correction_hi",
+                                "trust_score",
+                                "trust_label",
+                            }
+                        )
+                    )
+                    for p in retry_posts
+                ],
             )
+            counter_posts = await _run_generate(verify_payload)
 
-        await save_counter_info_posts([p.model_dump() for p in counter_posts])
-
-        return GenerateResponse(
-            status="success",
-            count=len(counter_posts),
-            posts=counter_posts,
-        )
+        return validation_response
 
     except HTTPException:
         raise

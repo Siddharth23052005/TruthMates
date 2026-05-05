@@ -6,6 +6,7 @@ Collections:
     civic_classified — stores classified civic posts.
     civic_verified — stores verified civic posts with evidence.
         civic_counter_info — stores counter-info results with trust score.
+    civic_validated — stores validated outputs with final verdict.
 
 Upsert strategy: match on 'link' field to prevent duplicates across scrape runs.
 """
@@ -168,6 +169,39 @@ async def save_counter_info_posts(posts: list[dict]) -> int:
 
         await collection.update_one(
             filter={"link": link},
+            update={"$set": document},
+            upsert=True,
+        )
+        processed += 1
+
+    return processed
+
+
+async def save_validated_posts(posts: list[dict]) -> int:
+    """
+    Upsert a list of validated output dicts into 'civic_validated'.
+
+    Each post is upserted by its 'claim' field.
+    A 'validated_at' UTC timestamp is added/updated on every write.
+
+    Returns the number of documents processed.
+    """
+    if not posts:
+        return 0
+
+    collection = get_db()["civic_validated"]
+    now = datetime.now(timezone.utc)
+    processed = 0
+
+    for post in posts:
+        claim = (post.get("claim") or "").strip()
+        if not claim:
+            continue
+
+        document = {**post, "validated_at": now}
+
+        await collection.update_one(
+            filter={"claim": claim},
             update={"$set": document},
             upsert=True,
         )

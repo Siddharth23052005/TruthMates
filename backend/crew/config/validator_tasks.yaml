@@ -1,0 +1,45 @@
+validate_output_task:
+  description: >
+    You will receive posts_json with counter-info outputs and evidence.
+
+    Validation checks required for EACH post:
+    1) Contradiction with any retrieved PIB fact (flag if counter_english
+       contradicts any match.fact_text from source_type "pinecone").
+    2) All cited source URLs are real and reachable. Use UrlCheckTool with the
+       list of sources for the post.
+    3) Trust score matches verdict logically. Use rules:
+       - If verification_label is "verified" AND a source URL is present, verdict should be TRUE.
+       - If verification_label is "unverified" AND no source URL, verdict should be UNVERIFIED.
+       - If a source URL is present but counter_english contradicts PIB fact, verdict should be MISLEADING.
+       Flag mismatch if verdict conflicts with trust_score label:
+         TRUE -> 71-100 (Green)
+         MISLEADING -> 41-70 (Yellow)
+         UNVERIFIED or FALSE -> 0-40 (Red)
+    4) Hindi translation must be present (non-empty).
+    5) Hallucinated statistics: flag if counter_english includes numbers or
+       statistics not supported by any match.fact_text.
+
+    Output MUST be JSON with a top-level object:
+    {
+      "items": [
+        {
+          "link": "...",
+          "verdict": "TRUE|FALSE|MISLEADING|UNVERIFIED",
+          "flags": {
+            "contradicts_pib_fact": false,
+            "invalid_source_url": false,
+            "trust_score_mismatch": false,
+            "missing_hindi": false,
+            "hallucinated_stats": false
+          }
+        }
+      ]
+    }
+
+    Do not call any external tools or web search (including brave_search).
+  expected_output: >
+    {"items": [{"link": "https://pib.gov.in/...", "verdict": "TRUE",
+      "flags": {"contradicts_pib_fact": false, "invalid_source_url": false,
+      "trust_score_mismatch": false, "missing_hindi": false,
+      "hallucinated_stats": false}}]}
+  agent: output_validator
