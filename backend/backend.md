@@ -1,7 +1,7 @@
 # TruthMates Backend Notes
 
 ## Overview
-TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, and stores verification results. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification and verification.
+TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, and generates counter-info corrections with trust scores. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, and counter-info generation.
 
 ## Current Architecture
 1. FastAPI `POST /scrape` triggers the CrewAI scraping workflow.
@@ -12,17 +12,22 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 6. Civic classified posts are stored in MongoDB with `classified_at`.
 7. Evidence retriever crew matches claims to facts (Pinecone + Google Fact Check).
 8. Verification results are stored in MongoDB with `verified_at`.
-9. The API returns `{status, count, posts}` with verified/unverified civic posts.
+9. Counter-info generator creates corrections, Hindi translations, and trust scores.
+10. Counter-info results are stored in MongoDB with `generated_at`.
+11. The API returns `{status, count, posts}` with counter-info results.
 
 ## Key Files
 - `main.py`: FastAPI app, routes, CORS, crew kickoff, JSON parsing, persistence.
 - `crew/truthmates_crew.py`: CrewAI wiring (agents, tasks, Groq LLM).
 - `crew/classifier_crew.py`: CrewAI classifier crew (CivicClassifyTool).
 - `crew/evidence_crew.py`: CrewAI evidence retriever crew (EvidenceRetrieveTool).
+- `crew/counter_info_crew.py`: CrewAI counter-info generator crew.
 - `crew/config/agents.yaml`: Agent roles, goals, and backstories.
 - `crew/config/tasks.yaml`: Task flow and expected outputs.
 - `crew/config/classifier_agents.yaml`: Classifier agent config.
 - `crew/config/classifier_tasks.yaml`: Classifier task config.
+- `crew/config/counter_agents.yaml`: Counter-info agent config.
+- `crew/config/counter_tasks.yaml`: Counter-info task config.
 - `crew/tools/rss_tool.py`: RSS fetch tool (requests + BeautifulSoup XML parser).
 - `crew/tools/clean_tool.py`: Cleaning + dedup tool (HTML strip, ISO dates).
 - `crew/tools/classify_tool.py`: BERT/IndicBERT classifier tool.
@@ -45,9 +50,10 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 
 ## Endpoints
 - `GET /`: Health check and DB connectivity status.
-- `POST /scrape`: Runs scrape + clean + classify + verify, returns verified civic posts.
-- `POST /classify`: Classifies a provided scraper output and triggers verification.
-- `POST /verify`: Retrieves evidence for classified posts.
+- `POST /scrape`: Runs scrape + clean + classify + verify + generate, returns counter-info posts.
+- `POST /classify`: Classifies a provided scraper output and triggers verify + generate.
+- `POST /verify`: Retrieves evidence and triggers counter-info generation.
+- `POST /generate`: Generates counter-info corrections and trust scores.
 
 ## Data Contract (Scrape Output)
 Each post has:
@@ -72,6 +78,12 @@ Verification adds:
 	- `source_url`
 	- `source_type` (pinecone | google_fact_check)
 
+Counter-info adds:
+- `correction_en`: plain language correction with source citation
+- `correction_hi`: Hindi translation (IndicTrans2)
+- `trust_score`: 0-100 score
+- `trust_label`: Red | Yellow | Green
+
 ## MongoDB Details
 - Collection: `civic_posts`
 - Upsert key: `link`
@@ -84,6 +96,10 @@ Verification adds:
 - Collection: `civic_verified`
 - Upsert key: `link`
 - Each verification overwrites existing data for the same link and updates `verified_at`.
+
+- Collection: `civic_counter_info`
+- Upsert key: `link`
+- Each generation overwrites existing data for the same link and updates `generated_at`.
 
 ## Notes on Feed Handling
 - PIB and MyGov RSS URLs are configurable via `.env`.
@@ -113,3 +129,4 @@ Verification adds:
 - Added exponential backoff retry for Groq rate limits and switched to llama-3.1-8b-instant for testing.
 - Reinforced no-external-tools instructions to prevent rogue tool calls.
 - Added limits: truncate descriptions to 300 chars, cap 10 posts per run, and insert 3s delays between pipeline stages.
+- Added Counter-Info Generator Crew and /generate endpoint with trust score and Hindi translation.

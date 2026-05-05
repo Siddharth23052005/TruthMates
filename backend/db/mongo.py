@@ -5,6 +5,7 @@ Collections:
   civic_posts — stores scraped RSS post data with timestamps.
     civic_classified — stores classified civic posts.
     civic_verified — stores verified civic posts with evidence.
+        civic_counter_info — stores counter-info results with trust score.
 
 Upsert strategy: match on 'link' field to prevent duplicates across scrape runs.
 """
@@ -131,6 +132,39 @@ async def save_verified_posts(posts: list[dict]) -> int:
             continue
 
         document = {**post, "verified_at": now}
+
+        await collection.update_one(
+            filter={"link": link},
+            update={"$set": document},
+            upsert=True,
+        )
+        processed += 1
+
+    return processed
+
+
+async def save_counter_info_posts(posts: list[dict]) -> int:
+    """
+    Upsert a list of counter-info post dicts into 'civic_counter_info'.
+
+    Each post is upserted by its 'link' field.
+    A 'generated_at' UTC timestamp is added/updated on every write.
+
+    Returns the number of documents processed.
+    """
+    if not posts:
+        return 0
+
+    collection = get_db()["civic_counter_info"]
+    now = datetime.now(timezone.utc)
+    processed = 0
+
+    for post in posts:
+        link = post.get("link", "").strip()
+        if not link:
+            continue
+
+        document = {**post, "generated_at": now}
 
         await collection.update_one(
             filter={"link": link},

@@ -61,6 +61,12 @@ class VerifiedPost(ClassifiedPost):
 
     verification_label: str = Field(..., description="verified | unverified")
     matches: list[EvidenceMatch]
+    crowdsource_reports: Optional[float] = Field(
+        0.0, description="Crowdsource reports score 0-1"
+    )
+    deepfake_score: Optional[float] = Field(
+        0.0, description="Deepfake score 0-1"
+    )
 
 
 class VerifyResponse(BaseModel):
@@ -69,3 +75,20 @@ class VerifyResponse(BaseModel):
     status: str
     count: int
     posts: list[VerifiedPost]
+
+
+class CounterInfoPost(VerifiedPost):
+    """Represents a counter-info post with corrections and trust score."""
+
+    correction_en: str = Field(..., description="Plain language correction")
+    correction_hi: str = Field(..., description="Hindi translation of correction")
+    trust_score: float = Field(..., description="Trust score 0-100")
+    trust_label: str = Field(..., description="Red | Yellow | Green")
+
+
+class GenerateResponse(BaseModel):
+    """FastAPI response schema for the /generate endpoint."""
+
+    status: str
+    count: int
+    posts: list[CounterInfoPost]

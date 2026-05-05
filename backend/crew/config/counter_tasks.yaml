@@ -1,0 +1,23 @@
+generate_counter_info_task:
+  description: >
+    You will receive posts_json with verified claims and evidence matches.
+
+    For each post, write a correction_body in plain English using simple words.
+    Keep it to a maximum of 3 sentences. If verification_label is "verified",
+    provide a confirmation statement. If verification_label is "unverified",
+    clearly state "no official source found" in the correction_body.
+
+    Do NOT include any source URL in correction_body; it will be appended later.
+    Do not call any external tools or web search (including brave_search).
+
+    Return ONLY a JSON array of objects with:
+    - link
+    - correction_body
+  expected_output: >
+    [
+      {
+        "link": "https://pib.gov.in/...",
+        "correction_body": "Official sources confirm this claim."
+      }
+    ]
+  agent: counter_info_generator
