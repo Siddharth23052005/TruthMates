@@ -33,6 +33,7 @@ from crew.classifier_crew import CivicClassifierCrew
 from crew.evidence_crew import EvidenceRetrieverCrew
 from crew.counter_info_crew import CounterInfoCrew
 from crew.output_validator_crew import OutputValidatorCrew
+from crew.monitoring_crew import MonitoringCrew
 from db.mongo import (
     ping_db,
     save_posts,
@@ -40,6 +41,8 @@ from db.mongo import (
     save_verified_posts,
     save_counter_info_posts,
     save_validated_posts,
+    save_monitor_log,
+    get_monitor_logs,
 )
 from models.schemas import (
     CivicPost,
@@ -53,6 +56,8 @@ from models.schemas import (
     ValidateResponse,
     ValidatedPost,
     ValidationFlags,
+    MonitorLogsResponse,
+    MonitorLog,
 )
 
 # ── Feed URLs (configurable via .env) ────────────────────────────────────────
@@ -112,6 +117,8 @@ _MAX_DESCRIPTION_CHARS = 300
 _TRANSLATION_MODEL = "ai4bharat/indictrans2-en-hi"
 _MAX_TRANSLATION_TOKENS = 256
 _VALIDATION_MAX_RETRIES = 2
+_MONITOR_MAX_RETRIES = 2
+_MONITOR_PREVIEW_CHARS = 1200
 
 
 def _is_rate_limit_error(message: str) -> bool:
@@ -233,6 +240,163 @@ def _sources_from_matches(matches: list) -> list[str]:
     return sources
 
 
+def _extract_confidence(output) -> Optional[float]:
+    values: list[float] = []
+    if isinstance(output, list):
+        for item in output:
+            if isinstance(item, dict) and "confidence" in item:
+                values.append(_clamp_score(item.get("confidence")))
+    elif isinstance(output, dict):
+        posts = output.get("posts")
+        if isinstance(posts, list):
+            for item in posts:
+                if isinstance(item, dict) and "confidence" in item:
+                    values.append(_clamp_score(item.get("confidence")))
+    if not values:
+        return None
+    return min(values)
+
+
+def _has_hallucination_flags(output) -> bool:
+    if isinstance(output, list):
+        for item in output:
+            if isinstance(item, dict):
+                flags = item.get("flags") or {}
+                if flags.get("hallucinated_stats") is True:
+                    return True
+                if item.get("hallucinated_stats") is True:
+                    return True
+    elif isinstance(output, dict):
+        posts = output.get("posts")
+        if isinstance(posts, list):
+            return _has_hallucination_flags(posts)
+        items = output.get("items")
+        if isinstance(items, list):
+            return _has_hallucination_flags(items)
+    return False
+
+
+def _is_output_complete(output) -> bool:
+    if output is None:
+        return False
+    if isinstance(output, list):
+        return len(output) > 0
+    if isinstance(output, dict):
+        if "posts" in output and isinstance(output["posts"], list):
+            return len(output["posts"]) > 0
+        if "items" in output and isinstance(output["items"], list):
+            return len(output["items"]) > 0
+        return len(output.keys()) > 0
+    return True
+
+
+def _truncate_for_log(value, max_chars: int = 4000) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=True)
+    except Exception:
+        text = str(value)
+    if len(text) > max_chars:
+        return text[:max_chars] + "..."
+    return text
+
+
+async def _monitor_review(agent_name: str, input_payload, output_payload, checks: dict) -> str:
+    crew_instance = MonitoringCrew()
+    output_preview = _truncate_for_log(output_payload, _MONITOR_PREVIEW_CHARS)
+    inputs = {
+        "agent_name": agent_name,
+        "checks_json": json.dumps(checks, ensure_ascii=True),
+        "error": checks.get("error") or "",
+        "output_preview": output_preview,
+    }
+
+    result = await _kickoff_with_retry(crew_instance.crew(), inputs)
+    raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+    clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+
+    try:
+        payload = json.loads(clean_text)
+        status = (payload.get("status") or "").upper()
+        if status in {"PASS", "FAIL"}:
+            return status
+    except Exception:
+        pass
+
+    return "PASS" if checks.get("pass") else "FAIL"
+
+
+async def _log_monitor_decision(
+    agent_name: str,
+    input_payload,
+    output_payload,
+    status: str,
+    retries: int,
+    checks: dict,
+) -> None:
+    await save_monitor_log(
+        {
+            "agent_name": agent_name,
+            "input": _truncate_for_log(input_payload),
+            "output": _truncate_for_log(output_payload),
+            "status": status,
+            "retries": retries,
+            "checks": checks,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+
+async def _run_with_monitor(
+    agent_name: str,
+    input_payload,
+    runner,
+):
+    retries = 0
+    while True:
+        output_payload = None
+        error_message = ""
+        try:
+            output_payload = await runner()
+        except Exception as exc:
+            error_message = str(exc)
+
+        confidence = _extract_confidence(output_payload)
+        confidence_ok = True if confidence is None else confidence >= 0.75
+        checks = {
+            "complete": _is_output_complete(output_payload),
+            "confidence_ok": confidence_ok,
+            "hallucination_flags": _has_hallucination_flags(output_payload),
+            "error": error_message,
+        }
+        checks["pass"] = (
+            checks["complete"]
+            and checks["confidence_ok"]
+            and not checks["hallucination_flags"]
+            and not checks["error"]
+        )
+
+        status = await _monitor_review(agent_name, input_payload, output_payload, checks)
+        await _log_monitor_decision(
+            agent_name,
+            input_payload,
+            output_payload,
+            status,
+            retries,
+            checks,
+        )
+
+        if status == "PASS" and checks["pass"]:
+            return output_payload
+
+        if retries >= _MONITOR_MAX_RETRIES:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Monitoring failed for {agent_name} after retries.",
+            )
+
+        retries += 1
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", tags=["Health"])
@@ -243,6 +407,38 @@ async def health_check():
         "service": "TruthMates API",
         "status": "running",
         "database": "connected" if db_ok else "unreachable",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/monitor/logs", response_model=MonitorLogsResponse, tags=["Monitor"])
+async def monitor_logs():
+    logs = await get_monitor_logs(limit=200)
+    clean_logs = []
+    for log in logs:
+        log["id"] = str(log.pop("_id"))
+        clean_logs.append(log)
+
+    return MonitorLogsResponse(
+        status="success",
+        count=len(clean_logs),
+        logs=[MonitorLog(**log) for log in clean_logs],
+    )
+
+
+@app.get("/monitor/status", tags=["Monitor"])
+async def monitor_status():
+    logs = await get_monitor_logs(limit=200)
+    last_by_agent: dict[str, str] = {}
+    for log in logs:
+        name = log.get("agent_name")
+        if name and name not in last_by_agent:
+            last_by_agent[name] = log.get("status", "UNKNOWN")
+
+    overall = "healthy" if all(v == "PASS" for v in last_by_agent.values()) else "degraded"
+    return {
+        "status": overall,
+        "agents": last_by_agent,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -260,39 +456,42 @@ async def scrape():
     5. Return validated outputs.
     """
     try:
-        # 1. Run the crew
+        # 1. Run the crew and parse output
         crew_instance = TruthMatesCrew()
-        result = await _kickoff_with_retry(
-            crew_instance.crew(),
-            {
-                "pib_url": PIB_RSS_URL,
-                "mygov_url": MYGOV_RSS_URL,
-            },
-        )
 
-        # 2. Extract raw text from CrewOutput
-        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
-
-        # 3. Parse JSON — strip markdown fences the LLM may add
-        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
-        try:
-            posts_data: list[dict] = json.loads(clean_text)
-        except json.JSONDecodeError:
-            # Attempt to locate a JSON array anywhere in the output
-            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
-            if match:
-                posts_data = json.loads(match.group())
-            else:
+        async def _run_scraper():
+            result = await _kickoff_with_retry(
+                crew_instance.crew(),
+                {
+                    "pib_url": PIB_RSS_URL,
+                    "mygov_url": MYGOV_RSS_URL,
+                },
+            )
+            raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+            clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+            try:
+                data = json.loads(clean_text)
+            except json.JSONDecodeError:
+                match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+                if match:
+                    data = json.loads(match.group())
+                else:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Crew returned output that could not be parsed as JSON.",
+                    )
+            if not isinstance(data, list):
                 raise HTTPException(
                     status_code=502,
-                    detail="Crew returned output that could not be parsed as JSON.",
+                    detail="Crew output is not a JSON array.",
                 )
+            return data
 
-        if not isinstance(posts_data, list):
-            raise HTTPException(
-                status_code=502,
-                detail="Crew output is not a JSON array.",
-            )
+        posts_data = await _run_with_monitor(
+            "scraper",
+            {"pib_url": PIB_RSS_URL, "mygov_url": MYGOV_RSS_URL},
+            _run_scraper,
+        )
 
         # 4. Validate through Pydantic
         now = datetime.now(timezone.utc)
@@ -360,24 +559,36 @@ async def classify(scrape_response: ScrapeResponse):
 
         posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
-        result = await _kickoff_with_retry(
-            crew_instance.crew(),
-            {"posts_json": posts_json},
-        )
-        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
-
-        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
-        try:
-            classified_data: list[dict] = json.loads(clean_text)
-        except json.JSONDecodeError:
-            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
-            if match:
-                classified_data = json.loads(match.group())
-            else:
+        async def _run_classifier():
+            result = await _kickoff_with_retry(
+                crew_instance.crew(),
+                {"posts_json": posts_json},
+            )
+            raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+            clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+            try:
+                data = json.loads(clean_text)
+            except json.JSONDecodeError:
+                match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+                if match:
+                    data = json.loads(match.group())
+                else:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Classifier returned output that could not be parsed as JSON.",
+                    )
+            if not isinstance(data, list):
                 raise HTTPException(
                     status_code=502,
-                    detail="Classifier returned output that could not be parsed as JSON.",
+                    detail="Classifier output is not a JSON array.",
                 )
+            return data
+
+        classified_data = await _run_with_monitor(
+            "classifier",
+            {"posts_json": posts_json},
+            _run_classifier,
+        )
 
         civic_posts: list[ClassifiedPost] = []
         for item in classified_data:
@@ -426,24 +637,36 @@ async def verify(classify_response: ClassifyResponse):
 
         posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
-        result = await _kickoff_with_retry(
-            crew_instance.crew(),
-            {"posts_json": posts_json},
-        )
-        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
-
-        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
-        try:
-            verified_data: list[dict] = json.loads(clean_text)
-        except json.JSONDecodeError:
-            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
-            if match:
-                verified_data = json.loads(match.group())
-            else:
+        async def _run_evidence():
+            result = await _kickoff_with_retry(
+                crew_instance.crew(),
+                {"posts_json": posts_json},
+            )
+            raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+            clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+            try:
+                data = json.loads(clean_text)
+            except json.JSONDecodeError:
+                match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+                if match:
+                    data = json.loads(match.group())
+                else:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Verifier returned output that could not be parsed as JSON.",
+                    )
+            if not isinstance(data, list):
                 raise HTTPException(
                     status_code=502,
-                    detail="Verifier returned output that could not be parsed as JSON.",
+                    detail="Verifier output is not a JSON array.",
                 )
+            return data
+
+        verified_data = await _run_with_monitor(
+            "evidence",
+            {"posts_json": posts_json},
+            _run_evidence,
+        )
 
         verified_posts: list[VerifiedPost] = []
         for item in verified_data:
@@ -478,24 +701,36 @@ async def _run_generate(verify_response: VerifyResponse) -> list[CounterInfoPost
 
     posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
-    result = await _kickoff_with_retry(
-        crew_instance.crew(),
-        {"posts_json": posts_json},
-    )
-    raw_text: str = result.raw if hasattr(result, "raw") else str(result)
-
-    clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
-    try:
-        correction_data: list[dict] = json.loads(clean_text)
-    except json.JSONDecodeError:
-        match = re.search(r"\[.*\]", clean_text, re.DOTALL)
-        if match:
-            correction_data = json.loads(match.group())
-        else:
+    async def _run_counter_info():
+        result = await _kickoff_with_retry(
+            crew_instance.crew(),
+            {"posts_json": posts_json},
+        )
+        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+        try:
+            data = json.loads(clean_text)
+        except json.JSONDecodeError:
+            match = re.search(r"\[.*\]", clean_text, re.DOTALL)
+            if match:
+                data = json.loads(match.group())
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Generator returned output that could not be parsed as JSON.",
+                )
+        if not isinstance(data, list):
             raise HTTPException(
                 status_code=502,
-                detail="Generator returned output that could not be parsed as JSON.",
+                detail="Generator output is not a JSON array.",
             )
+        return data
+
+    correction_data = await _run_with_monitor(
+        "counter_info",
+        {"posts_json": posts_json},
+        _run_counter_info,
+    )
 
     corrections_by_link: dict[str, str] = {}
     for item in correction_data:
@@ -558,34 +793,48 @@ async def _run_validate(counter_posts: list[CounterInfoPost]) -> ValidateRespons
 
     posts_json = json.dumps(payload_items, ensure_ascii=True)
 
-    result = await _kickoff_with_retry(
-        crew_instance.crew(),
-        {"posts_json": posts_json},
-    )
-    raw_text: str = result.raw if hasattr(result, "raw") else str(result)
-    clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+    async def _run_validator():
+        result = await _kickoff_with_retry(
+            crew_instance.crew(),
+            {"posts_json": posts_json},
+        )
+        raw_text: str = result.raw if hasattr(result, "raw") else str(result)
+        clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
 
-    validated_payload = None
-    if hasattr(Guard, "from_pydantic"):
-        try:
-            guard = Guard.from_pydantic(_ValidationPayload)
-            outcome = guard.parse(clean_text)
-            validated_payload = outcome.validated_output
-        except Exception:
-            validated_payload = None
-
-    if validated_payload is None:
-        try:
-            parsed = _ValidationPayload.model_validate_json(clean_text)
-            validated_payload = parsed.model_dump()
-        except Exception:
+        validated_payload = None
+        if hasattr(Guard, "from_pydantic"):
             try:
-                validated_payload = json.loads(clean_text)
-            except json.JSONDecodeError as exc:
-                raise HTTPException(
-                    status_code=502,
-                    detail="Validator returned output that could not be parsed as JSON.",
-                ) from exc
+                guard = Guard.from_pydantic(_ValidationPayload)
+                outcome = guard.parse(clean_text)
+                validated_payload = outcome.validated_output
+            except Exception:
+                validated_payload = None
+
+        if validated_payload is None:
+            try:
+                parsed = _ValidationPayload.model_validate_json(clean_text)
+                validated_payload = parsed.model_dump()
+            except Exception:
+                try:
+                    validated_payload = json.loads(clean_text)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Validator returned output that could not be parsed as JSON.",
+                    ) from exc
+
+        if isinstance(validated_payload, dict) and "items" in validated_payload:
+            return validated_payload
+        raise HTTPException(
+            status_code=502,
+            detail="Validator output is missing items array.",
+        )
+
+    validated_payload = await _run_with_monitor(
+        "validator",
+        {"posts_json": posts_json},
+        _run_validator,
+    )
 
     if hasattr(validated_payload, "model_dump"):
         validated_payload = validated_payload.model_dump()

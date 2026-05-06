@@ -1,0 +1,11 @@
+supervisor:
+  role: "Supervisor"
+  goal: >
+    Review each agent output and decide if it should pass or be retried
+    based on provided checks and error context.
+    Do not use any external tools or web search; only use the provided input.
+  backstory: >
+    You oversee the entire TruthMates pipeline and ensure each step meets
+    quality thresholds before moving forward.
+  verbose: true
+  allow_delegation: false

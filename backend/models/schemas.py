@@ -126,3 +126,24 @@ class ValidateResponse(BaseModel):
     status: str
     count: int
     posts: list[ValidatedPost]
+
+
+class MonitorLog(BaseModel):
+    """Represents a single monitoring decision entry."""
+
+    id: Optional[str] = None
+    agent_name: str
+    input: str
+    output: str
+    status: str
+    retries: int
+    checks: Optional[dict] = None
+    timestamp: datetime
+
+
+class MonitorLogsResponse(BaseModel):
+    """Response schema for monitor logs endpoint."""
+
+    status: str
+    count: int
+    logs: list[MonitorLog]

@@ -7,6 +7,7 @@ Collections:
     civic_verified — stores verified civic posts with evidence.
         civic_counter_info — stores counter-info results with trust score.
     civic_validated — stores validated outputs with final verdict.
+        agent_monitor_logs — stores monitoring decisions.
 
 Upsert strategy: match on 'link' field to prevent duplicates across scrape runs.
 """
@@ -208,6 +209,19 @@ async def save_validated_posts(posts: list[dict]) -> int:
         processed += 1
 
     return processed
+
+
+async def save_monitor_log(entry: dict) -> None:
+    """Insert a monitoring log entry into 'agent_monitor_logs'."""
+    collection = get_db()["agent_monitor_logs"]
+    await collection.insert_one(entry)
+
+
+async def get_monitor_logs(limit: int = 100) -> list[dict]:
+    """Return recent monitoring logs, newest first."""
+    collection = get_db()["agent_monitor_logs"]
+    cursor = collection.find().sort("timestamp", -1).limit(limit)
+    return [doc async for doc in cursor]
 
 
 async def ping_db() -> bool:

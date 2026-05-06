@@ -1,0 +1,19 @@
+monitor_task:
+  description: >
+    You will receive:
+      - agent_name
+      - checks_json (pass/fail of required checks)
+      - error (if any)
+      - output_preview (truncated output)
+
+    Decide whether the output should PASS or FAIL. If any check in checks_json
+    is false or error is present, return status FAIL. Otherwise return PASS.
+
+    Output ONLY JSON:
+    {
+      "status": "PASS|FAIL",
+      "notes": ["short reason", "short reason"]
+    }
+  expected_output: >
+    {"status": "PASS", "notes": ["All checks passed"]}
+  agent: supervisor

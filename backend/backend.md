@@ -1,7 +1,7 @@
 # TruthMates Backend Notes
 
 ## Overview
-TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, generates counter-info corrections with trust scores, and validates outputs. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, counter-info, and validation.
+TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, generates counter-info corrections with trust scores, validates outputs, and monitors every step. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, counter-info, validation, and monitoring.
 
 ## Current Architecture
 1. FastAPI `POST /scrape` triggers the CrewAI scraping workflow.
@@ -16,7 +16,9 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 10. Counter-info results are stored in MongoDB with `generated_at`.
 11. Output validator checks sources, contradictions, trust-score logic, and Hindi presence.
 12. Validated results are stored in MongoDB with `validated_at`.
-13. The API returns `{status, count, posts}` with validated outputs.
+13. Monitoring agent reviews each step and retries failed outputs (max 2 retries).
+14. Monitoring decisions are stored in MongoDB with agent input/output.
+15. The API returns `{status, count, posts}` with validated outputs.
 
 ## Key Files
 - `main.py`: FastAPI app, routes, CORS, crew kickoff, JSON parsing, persistence.
@@ -25,6 +27,7 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 - `crew/evidence_crew.py`: CrewAI evidence retriever crew (EvidenceRetrieveTool).
 - `crew/counter_info_crew.py`: CrewAI counter-info generator crew.
 - `crew/output_validator_crew.py`: CrewAI output validator crew.
+- `crew/monitoring_crew.py`: CrewAI supervisor monitoring crew.
 - `crew/config/agents.yaml`: Agent roles, goals, and backstories.
 - `crew/config/tasks.yaml`: Task flow and expected outputs.
 - `crew/config/classifier_agents.yaml`: Classifier agent config.
@@ -33,6 +36,8 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 - `crew/config/counter_tasks.yaml`: Counter-info task config.
 - `crew/config/validator_agents.yaml`: Output validator agent config.
 - `crew/config/validator_tasks.yaml`: Output validator task config.
+- `crew/config/monitor_agents.yaml`: Monitoring supervisor config.
+- `crew/config/monitor_tasks.yaml`: Monitoring task config.
 - `crew/tools/rss_tool.py`: RSS fetch tool (requests + BeautifulSoup XML parser).
 - `crew/tools/clean_tool.py`: Cleaning + dedup tool (HTML strip, ISO dates).
 - `crew/tools/classify_tool.py`: BERT/IndicBERT classifier tool.
@@ -61,6 +66,8 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 - `POST /verify`: Retrieves evidence and triggers generate + validate.
 - `POST /generate`: Generates counter-info and triggers validation.
 - `POST /validate`: Validates counter-info outputs and returns final verdicts.
+- `GET /monitor/logs`: Returns monitoring decisions.
+- `GET /monitor/status`: Returns current pipeline health.
 
 ## Data Contract (Scrape Output)
 Each post has:
@@ -116,6 +123,9 @@ Validation adds:
 - Upsert key: `claim`
 - Each validation overwrites existing data for the same claim and updates `validated_at`.
 
+- Collection: `agent_monitor_logs`
+- Each decision logs agent_name, input, output, status, retries, timestamp.
+
 ## Notes on Feed Handling
 - PIB and MyGov RSS URLs are configurable via `.env`.
 - Fetch failures are handled gracefully, returning an empty list for that feed.
@@ -147,3 +157,4 @@ Validation adds:
 - Added Counter-Info Generator Crew and /generate endpoint with trust score and Hindi translation.
 - Added Output Validator Crew and /validate endpoint with retry logic.
 - Updated validator verdict rules and trust-score alignment.
+- Added Monitoring Supervisor crew, logging, and /monitor endpoints.
