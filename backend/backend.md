@@ -1,7 +1,7 @@
 # TruthMates Backend Notes
 
 ## Overview
-TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, generates counter-info corrections with trust scores, validates outputs, and monitors every step. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, counter-info, validation, and monitoring.
+TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, generates counter-info corrections with trust scores, validates outputs, and monitors every step. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, counter-info, validation, and monitoring. A dedicated `POST /analyze` endpoint bypasses RSS and accepts raw claim text directly.
 
 ## Current Architecture
 1. FastAPI `POST /scrape` triggers the CrewAI scraping workflow.
@@ -20,9 +20,13 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 14. Monitoring decisions are stored in MongoDB with agent input/output.
 15. The API returns `{status, count, posts}` with validated outputs.
 
+Notes:
+- `POST /analyze` bypasses RSS and runs classify -> evidence -> generate -> validate directly.
+- Monitoring is skipped for `POST /analyze` during counter-info generation and validation.
+
 ## Key Files
 - `main.py`: FastAPI app, routes, CORS, crew kickoff, JSON parsing, persistence.
-- `crew/truthmates_crew.py`: CrewAI wiring (agents, tasks, Groq LLM).
+- `crew/truthmates_crew.py`: CrewAI wiring (agents, tasks, Cerebras LLM).
 - `crew/classifier_crew.py`: CrewAI classifier crew (CivicClassifyTool).
 - `crew/evidence_crew.py`: CrewAI evidence retriever crew (EvidenceRetrieveTool).
 - `crew/counter_info_crew.py`: CrewAI counter-info generator crew.
@@ -49,7 +53,7 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 - `.env.example`: Required environment variables and default RSS URLs.
 
 ## Environment Variables
-- `GROQ_API_KEY`: Groq API key for the CrewAI LLM.
+- `CEREBRAS_API_KEY`: Cerebras API key for the CrewAI LLM.
 - `MONGODB_URI`: MongoDB Atlas connection string.
 - `MONGODB_DB_NAME`: Database name (default: `truthmates`).
 - `PIB_RSS_URL`: PIB RSS feed URL.
@@ -66,8 +70,13 @@ TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PI
 - `POST /verify`: Retrieves evidence and triggers generate + validate.
 - `POST /generate`: Generates counter-info and triggers validation.
 - `POST /validate`: Validates counter-info outputs and returns final verdicts.
+- `POST /analyze`: Accepts a raw claim string and runs classify -> evidence -> generate -> validate.
 - `GET /monitor/logs`: Returns monitoring decisions.
 - `GET /monitor/status`: Returns current pipeline health.
+
+## Data Contract (Analyze Input)
+Analyze input expects:
+- `claim`: raw claim text
 
 ## Data Contract (Scrape Output)
 Each post has:
@@ -132,7 +141,7 @@ Validation adds:
 
 ## Run Locally
 1. `pip install -r requirements.txt`
-2. Configure `.env` with Groq and MongoDB values.
+2. Configure `.env` with Cerebras and MongoDB values.
 3. `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
 4. `curl -X POST http://localhost:8000/scrape`
 
@@ -158,3 +167,12 @@ Validation adds:
 - Added Output Validator Crew and /validate endpoint with retry logic.
 - Updated validator verdict rules and trust-score alignment.
 - Added Monitoring Supervisor crew, logging, and /monitor endpoints.
+
+## Progress Log (2026-05-07)
+- Switched all CrewAI LLM calls from Groq to Cerebras (model `llama3.1-8b`, base URL `https://api.cerebras.ai/v1`).
+- Added `POST /analyze` to accept raw claim text without RSS scraping.
+- `POST /analyze` calls `CivicClassifyTool` and `EvidenceRetrieveTool` directly to avoid LLM copying/caching of example data.
+- Disabled CrewAI task caching and removed example/demo outputs from task prompts.
+- Added Pinecone debug logging (index stats, query text, similarity scores) and lowered match threshold to 0.50.
+- Skipped monitoring inside `POST /analyze` for counter-info generation and validation.
+- Observed Cerebras queue throttling (`429 queue_exceeded`) during counter-info generation under load.
