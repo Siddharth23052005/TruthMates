@@ -1,47 +1,95 @@
+import { useEffect, useMemo, useState } from "react"
 import Footer from "../components/Footer"
 import Navbar from "../components/Navbar"
 import TrustScoreBadge from "../components/TrustScoreBadge"
+import { apiBaseUrl, apiClient } from "../lib/api"
 
-const liveStream = [
-  {
-    claim: "Governor admits to embezzling state funds in leaked audio",
-    verdict: "FALSE",
-    time: "14:22:05",
-    trust: "0.12"
-  },
-  {
-    claim: "New viral outbreak linked to contaminated water supply in Sector 4",
-    verdict: "TRUE",
-    time: "14:18:33",
-    trust: "0.96"
-  },
-  {
-    claim: "Stock market to crash next Tuesday according to insider",
-    verdict: "MISLEADING",
-    time: "14:15:10",
-    trust: "0.45"
-  },
-  {
-    claim: "Elections rigged using remote manipulation software",
-    verdict: "FALSE",
-    time: "14:02:44",
-    trust: "0.05"
-  },
-  {
-    claim: "Local refinery fire caused by deliberate sabotage",
-    verdict: "INVESTIGATING",
-    time: "13:58:12",
-    trust: "--"
-  },
-  {
-    claim: "Military mobilizing in border regions ahead of summit",
-    verdict: "MISLEADING",
-    time: "13:45:01",
-    trust: "0.51"
-  }
-]
+const formatTime = (timestamp) => {
+  if (!timestamp) return "--:--:--"
+  const parsed = new Date(timestamp)
+  if (Number.isNaN(parsed.getTime())) return "--:--:--"
+  return parsed.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  })
+}
+
+const formatSnippet = (value, fallback) => {
+  const text = String(value || "").replace(/\s+/g, " ").trim()
+  if (!text) return fallback
+  if (text.length <= 80) return text
+  return `${text.slice(0, 77)}...`
+}
 
 export default function Dashboard() {
+  const [monitorLogs, setMonitorLogs] = useState([])
+  const [monitorStatus, setMonitorStatus] = useState({ status: "unknown", agents: {} })
+  const [errorMessage, setErrorMessage] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadMonitorData = async () => {
+      if (!apiBaseUrl) {
+        if (isMounted) {
+          setErrorMessage("VITE_API_BASE_URL is not configured.")
+          setIsLoading(false)
+        }
+        return
+      }
+
+      try {
+        const [logsResponse, statusResponse] = await Promise.all([
+          apiClient.get("/monitor/logs"),
+          apiClient.get("/monitor/status")
+        ])
+
+        if (!isMounted) return
+
+        setMonitorLogs(logsResponse?.data?.logs || [])
+        setMonitorStatus(statusResponse?.data || { status: "unknown", agents: {} })
+        setErrorMessage("")
+      } catch (error) {
+        if (!isMounted) return
+        const apiError = error?.response?.data?.detail
+        setErrorMessage(apiError || "Unable to load monitor data.")
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadMonitorData()
+    const intervalId = setInterval(loadMonitorData, 8000)
+
+    return () => {
+      isMounted = false
+      clearInterval(intervalId)
+    }
+  }, [apiBaseUrl, apiClient])
+
+  const liveStream = useMemo(() => {
+    return monitorLogs.map((log, index) => ({
+      id: log.id || `${log.agent_name || "log"}-${index}`,
+      claim: formatSnippet(log.input || log.output || log.agent_name, "Monitor update"),
+      verdict: log.status || "UNKNOWN",
+      time: formatTime(log.timestamp),
+      trust: "--"
+    }))
+  }, [monitorLogs])
+
+  const statusText = (monitorStatus?.status || "unknown").toUpperCase()
+  const statusLabel = errorMessage ? "PIPELINE ERROR" : `PIPELINE HEALTH: ${statusText}`
+  const tableMessage = errorMessage
+    ? errorMessage
+    : isLoading
+      ? "Loading monitor logs..."
+      : "No monitor logs yet."
+
   return (
     <Navbar topSearchPlaceholder="QUERY DATABASE...">
       <main className="flex-1 overflow-y-auto p-container-padding">
@@ -55,7 +103,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-2 text-success-neon font-badge-label text-badge-label bg-success-neon/10 border border-success-neon/20 px-3 py-1 rounded">
               <span className="w-1.5 h-1.5 bg-success-neon rounded-full animate-pulse"></span>
-              LIVE UPLINK ACTIVE
+              {statusLabel}
             </div>
           </div>
 
@@ -129,18 +177,26 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="font-terminal-log text-terminal-log divide-y divide-surface-elevated">
-                    {liveStream.map((row) => (
-                      <tr key={row.claim} className="hover:bg-surface-elevated transition-colors group cursor-pointer">
-                        <td className="py-3 px-4 text-text-primary truncate max-w-[200px]">{row.claim}</td>
-                        <td className="py-3 px-4">
-                          <TrustScoreBadge verdict={row.verdict} />
-                        </td>
-                        <td className="py-3 px-4 text-on-surface-variant">{row.time}</td>
-                        <td className="py-3 px-4 text-right font-data-num text-[14px] text-text-primary">
-                          {row.trust}
+                    {liveStream.length ? (
+                      liveStream.map((row) => (
+                        <tr key={row.id} className="hover:bg-surface-elevated transition-colors group cursor-pointer">
+                          <td className="py-3 px-4 text-text-primary truncate max-w-[200px]">{row.claim}</td>
+                          <td className="py-3 px-4">
+                            <TrustScoreBadge verdict={row.verdict} />
+                          </td>
+                          <td className="py-3 px-4 text-on-surface-variant">{row.time}</td>
+                          <td className="py-3 px-4 text-right font-data-num text-[14px] text-text-primary">
+                            {row.trust}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="py-3 px-4 text-on-surface-variant" colSpan={4}>
+                          {tableMessage}
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
