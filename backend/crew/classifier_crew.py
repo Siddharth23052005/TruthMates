@@ -24,7 +24,17 @@ class CivicClassifierCrew:
     agents_config = str(_CONFIG_DIR / "classifier_agents.yaml")
     tasks_config = str(_CONFIG_DIR / "classifier_tasks.yaml")
 
+    def __init__(self, llm_provider: str = "cerebras") -> None:
+        self._llm_provider = llm_provider
+
     def _llm(self) -> LLM:
+        if self._llm_provider == "together":
+            return LLM(
+                model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                api_key=os.environ["TOGETHER_API_KEY"],
+                base_url="https://api.together.xyz/v1",
+                temperature=0.0,
+            )
         return LLM(
             model="llama3.1-8b",
             api_key=os.environ["CEREBRAS_API_KEY"],

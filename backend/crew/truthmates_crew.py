@@ -35,8 +35,18 @@ class TruthMatesCrew:
 
     # -- Shared LLM ------------------------------------------------------------
 
+    def __init__(self, llm_provider: str = "cerebras") -> None:
+        self._llm_provider = llm_provider
+
     def _llm(self) -> LLM:
         """Return a Cerebras LLaMA 3.1 8B LLM instance."""
+        if self._llm_provider == "together":
+            return LLM(
+                model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                api_key=os.environ["TOGETHER_API_KEY"],
+                base_url="https://api.together.xyz/v1",
+                temperature=0.0,
+            )
         return LLM(
             model="llama3.1-8b",
             api_key=os.environ["CEREBRAS_API_KEY"],

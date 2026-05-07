@@ -26,6 +26,7 @@ pip install -r requirements.txt
 2) Create a .env file with required keys:
 ```
 CEREBRAS_API_KEY=...
+TOGETHER_API_KEY=...
 MONGODB_URI=...
 MONGODB_DB_NAME=truthmates
 PIB_RSS_URL=https://www.pib.gov.in/ViewRss.aspx?reg=1&lang=1
@@ -75,6 +76,7 @@ curl -X POST http://localhost:8000/scrape
 
 ## LLM Provider
 - Current LLM: Cerebras (model llama3.1-8b, base URL https://api.cerebras.ai/v1).
+- Fallback LLM: Together (model meta-llama/Llama-3.3-70B-Instruct-Turbo, base URL https://api.together.xyz/v1).
 
 ## Notes
 - /analyze bypasses RSS and uses CivicClassifyTool + EvidenceRetrieveTool directly.

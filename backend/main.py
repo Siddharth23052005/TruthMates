@@ -113,8 +113,8 @@ app.add_middleware(
 
 # ── Retry helpers (Groq rate limits) ─────────────────────────────────────────
 
-_RETRY_BASE_DELAY_SECONDS = 2
-_MAX_RETRIES = 3
+_RETRY_BASE_DELAY_SECONDS = 10
+_MAX_RETRIES = 5
 _PIPELINE_DELAY_SECONDS = 3
 _MAX_POSTS_PER_RUN = 10
 _MAX_DESCRIPTION_CHARS = 300
@@ -138,6 +138,16 @@ def _is_rate_limit_error(message: str) -> bool:
     )
 
 
+def _is_queue_error(message: str) -> bool:
+    lowered = message.lower()
+    return (
+        "queue_exceeded" in lowered
+        or "too_many_requests" in lowered
+        or "http 429" in lowered
+        or "error code: 429" in lowered
+    )
+
+
 def _parse_tool_json(text: str) -> list[dict]:
     clean_text = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`")
     try:
@@ -147,17 +157,25 @@ def _parse_tool_json(text: str) -> list[dict]:
     return parsed if isinstance(parsed, list) else []
 
 
-async def _kickoff_with_retry(crew_instance, inputs: dict):
+async def _kickoff_with_retry(
+    crew_factory,
+    inputs: dict,
+    fallback_factory=None,
+):
     retries = 0
     while True:
         try:
-            return crew_instance.kickoff(inputs=inputs)
+            crew = crew_factory() if callable(crew_factory) else crew_factory
+            return crew.kickoff(inputs=inputs)
         except Exception as exc:
-            if _is_rate_limit_error(str(exc)) and retries < _MAX_RETRIES:
-                delay = _RETRY_BASE_DELAY_SECONDS * (2 ** retries)
+            message = str(exc)
+            if (_is_rate_limit_error(message) or _is_queue_error(message)) and retries < _MAX_RETRIES:
                 retries += 1
-                await asyncio.sleep(delay)
+                await asyncio.sleep(_RETRY_BASE_DELAY_SECONDS)
                 continue
+            if (_is_rate_limit_error(message) or _is_queue_error(message)) and fallback_factory is not None:
+                crew = fallback_factory() if callable(fallback_factory) else fallback_factory
+                return crew.kickoff(inputs=inputs)
             raise
 
 
@@ -319,6 +337,7 @@ def _truncate_for_log(value, max_chars: int = 4000) -> str:
 
 async def _monitor_review(agent_name: str, input_payload, output_payload, checks: dict) -> str:
     crew_instance = MonitoringCrew()
+    fallback_instance = MonitoringCrew(llm_provider="together")
     output_preview = _truncate_for_log(output_payload, _MONITOR_PREVIEW_CHARS)
     inputs = {
         "agent_name": agent_name,
@@ -327,7 +346,11 @@ async def _monitor_review(agent_name: str, input_payload, output_payload, checks
         "output_preview": output_preview,
     }
 
-    result = await _kickoff_with_retry(crew_instance.crew(), inputs)
+    result = await _kickoff_with_retry(
+        crew_instance.crew,
+        inputs,
+        fallback_factory=fallback_instance.crew,
+    )
     raw_text: str = result.raw if hasattr(result, "raw") else str(result)
     clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
 
@@ -544,14 +567,16 @@ async def scrape():
     try:
         # 1. Run the crew and parse output
         crew_instance = TruthMatesCrew()
+        fallback_instance = TruthMatesCrew(llm_provider="together")
 
         async def _run_scraper():
             result = await _kickoff_with_retry(
-                crew_instance.crew(),
+                crew_instance.crew,
                 {
                     "pib_url": PIB_RSS_URL,
                     "mygov_url": MYGOV_RSS_URL,
                 },
+                fallback_factory=fallback_instance.crew,
             )
             raw_text: str = result.raw if hasattr(result, "raw") else str(result)
             clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
@@ -635,6 +660,7 @@ async def classify(scrape_response: ScrapeResponse):
     """
     try:
         crew_instance = CivicClassifierCrew()
+        fallback_instance = CivicClassifierCrew(llm_provider="together")
         trimmed_posts: list[dict] = []
         for post in scrape_response.posts[:_MAX_POSTS_PER_RUN]:
             data = post.model_dump(mode="json")
@@ -647,8 +673,9 @@ async def classify(scrape_response: ScrapeResponse):
 
         async def _run_classifier():
             result = await _kickoff_with_retry(
-                crew_instance.crew(),
+                crew_instance.crew,
                 {"posts_json": posts_json},
+                fallback_factory=fallback_instance.crew,
             )
             raw_text: str = result.raw if hasattr(result, "raw") else str(result)
             clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
@@ -713,6 +740,7 @@ async def verify(classify_response: ClassifyResponse):
     """
     try:
         crew_instance = EvidenceRetrieverCrew()
+        fallback_instance = EvidenceRetrieverCrew(llm_provider="together")
         trimmed_posts: list[dict] = []
         for post in classify_response.posts[:_MAX_POSTS_PER_RUN]:
             data = post.model_dump(mode="json")
@@ -725,8 +753,9 @@ async def verify(classify_response: ClassifyResponse):
 
         async def _run_evidence():
             result = await _kickoff_with_retry(
-                crew_instance.crew(),
+                crew_instance.crew,
                 {"posts_json": posts_json},
+                fallback_factory=fallback_instance.crew,
             )
             raw_text: str = result.raw if hasattr(result, "raw") else str(result)
             clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
@@ -776,6 +805,7 @@ async def verify(classify_response: ClassifyResponse):
 
 async def _run_generate(verify_response: VerifyResponse, use_monitor: bool = True) -> list[CounterInfoPost]:
     crew_instance = CounterInfoCrew()
+    fallback_instance = CounterInfoCrew(llm_provider="together")
     trimmed_posts: list[dict] = []
     for post in verify_response.posts[:_MAX_POSTS_PER_RUN]:
         data = post.model_dump(mode="json")
@@ -789,8 +819,9 @@ async def _run_generate(verify_response: VerifyResponse, use_monitor: bool = Tru
 
     async def _run_counter_info():
         result = await _kickoff_with_retry(
-            crew_instance.crew(),
+            crew_instance.crew,
             {"posts_json": posts_json},
+            fallback_factory=fallback_instance.crew,
         )
         raw_text: str = result.raw if hasattr(result, "raw") else str(result)
         clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
@@ -878,6 +909,7 @@ async def _run_validate(
     use_monitor: bool = True,
 ) -> ValidateResponse:
     crew_instance = OutputValidatorCrew()
+    fallback_instance = OutputValidatorCrew(llm_provider="together")
 
     payload_items = []
     for post in counter_posts[:_MAX_POSTS_PER_RUN]:
@@ -887,8 +919,9 @@ async def _run_validate(
 
     async def _run_validator():
         result = await _kickoff_with_retry(
-            crew_instance.crew(),
+            crew_instance.crew,
             {"posts_json": posts_json},
+            fallback_factory=fallback_instance.crew,
         )
         raw_text: str = result.raw if hasattr(result, "raw") else str(result)
         clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")

@@ -54,6 +54,7 @@ Notes:
 
 ## Environment Variables
 - `CEREBRAS_API_KEY`: Cerebras API key for the CrewAI LLM.
+- `TOGETHER_API_KEY`: Together AI API key for LLM fallback.
 - `MONGODB_URI`: MongoDB Atlas connection string.
 - `MONGODB_DB_NAME`: Database name (default: `truthmates`).
 - `PIB_RSS_URL`: PIB RSS feed URL.
@@ -170,6 +171,7 @@ Validation adds:
 
 ## Progress Log (2026-05-07)
 - Switched all CrewAI LLM calls from Groq to Cerebras (model `llama3.1-8b`, base URL `https://api.cerebras.ai/v1`).
+- Added 10-second retry backoff (max 5 retries) for Cerebras calls with fallback to Together (`meta-llama/Llama-3.3-70B-Instruct-Turbo`).
 - Added `POST /analyze` to accept raw claim text without RSS scraping.
 - `POST /analyze` calls `CivicClassifyTool` and `EvidenceRetrieveTool` directly to avoid LLM copying/caching of example data.
 - Disabled CrewAI task caching and removed example/demo outputs from task prompts.
