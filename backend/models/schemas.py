@@ -114,6 +114,16 @@ class ValidatedPost(BaseModel):
     counter_hindi: str
     sources: list[str]
     flags: ValidationFlags
+    # Real analysis metrics (0-100 scale)
+    llm_confidence: Optional[float] = Field(0.0, description="LLM confidence percentage 0-100")
+    source_match: Optional[float] = Field(0.0, description="Best source similarity percentage 0-100")
+    source_found: Optional[float] = Field(0.0, description="Whether an official source was found 0 or 100")
+    deepfake_score: Optional[float] = Field(0.0, description="Deepfake detection score 0-100")
+    crowd_reports: Optional[float] = Field(0.0, description="Crowdsource reports score 0-100")
+    input_type: Optional[str] = Field("text", description="Input type: text | video | audio")
+    content_summary: Optional[str] = Field(None, description="Short summary of the input content")
+    video_title: Optional[str] = Field(None, description="Video title if input was video/audio")
+    video_url: Optional[str] = Field(None, description="Video URL if input was video")
     validated_at: Optional[datetime] = Field(
         default_factory=datetime.utcnow,
         description="UTC timestamp when this record was validated",

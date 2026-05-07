@@ -12,17 +12,24 @@ Run:
     uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
 
+import os
+os.environ["USE_TF"] = "0"           # Tell transformers: skip TensorFlow
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Suppress TF warnings
+
 import asyncio
+
 import json
 import os
 import re
+import shutil
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from guardrails import Guard
 from pydantic import BaseModel
@@ -83,9 +90,9 @@ async def lifespan(app: FastAPI):
     """Verify DB connectivity on startup."""
     ok = await ping_db()
     if ok:
-        print("✅  MongoDB Atlas connected successfully.")
+        print("[OK] MongoDB Atlas connected successfully.")
     else:
-        print("⚠️   MongoDB Atlas connection FAILED — check MONGODB_URI in .env")
+        print("[WARN] MongoDB Atlas connection FAILED - check MONGODB_URI in .env")
     yield
     # Shutdown: nothing to clean up for Motor
 
@@ -127,6 +134,10 @@ _MONITOR_PREVIEW_CHARS = 1200
 
 class AnalyzeRequest(BaseModel):
     claim: str
+
+
+class AnalyzeVideoRequest(BaseModel):
+    url: str
 
 
 def _is_rate_limit_error(message: str) -> bool:
@@ -273,6 +284,25 @@ def _sources_from_matches(matches: list) -> list[str]:
         if url and url not in sources:
             sources.append(url)
     return sources
+
+
+def _max_pinecone_similarity(matches: list) -> float:
+    """Return the highest similarity score from a list of matches."""
+    best = 0.0
+    for match in matches:
+        score = getattr(match, "similarity", 0.0) or 0.0
+        if isinstance(score, (int, float)) and score > best:
+            best = score
+    return min(1.0, max(0.0, best))
+
+
+def _select_source_url(matches: list) -> str:
+    """Return the first non-empty source URL from matches."""
+    for match in matches:
+        url = getattr(match, "source_url", "") or ""
+        if url:
+            return url
+    return ""
 
 
 def _extract_confidence(output) -> Optional[float]:
@@ -997,15 +1027,37 @@ async def _run_validate(
         verdict = verdict_by_link.get(post.link, "UNVERIFIED")
         sources = _sources_from_matches(post.matches)
 
+        # Compute real metrics for frontend display
+        llm_conf = round(_clamp_score(getattr(post, 'confidence', 0.0)) * 100, 1)
+        best_sim = round(_max_pinecone_similarity(post.matches) * 100, 1)
+        has_source = 100.0 if _select_source_url(post.matches) else 0.0
+        dfake = round(_clamp_score(getattr(post, 'deepfake_score', 0.0)) * 100, 1)
+        crowd = round(_clamp_score(getattr(post, 'crowdsource_reports', 0.0)) * 100, 1)
+
+        if verdict == "MISINFORMATION DETECTED":
+            ai_assessment = "AI Assessment: We found evidence opposing this claim."
+        elif verdict == "SOURCES UNAVAILABLE":
+            ai_assessment = "AI Assessment: We could not verify this claim due to unavailable sources."
+        else:
+            ai_assessment = "AI Assessment: We did not find any official sources to confirm or deny this claim."
+
+        correction_en = f"{ai_assessment} {post.correction_en}"
+
         validated_posts.append(
             ValidatedPost(
                 claim=post.title,
                 verdict=verdict,
                 trust_score=post.trust_score,
-                counter_english=post.correction_en,
+                counter_english=correction_en,
                 counter_hindi=post.correction_hi,
                 sources=sources,
                 flags=flags,
+                llm_confidence=llm_conf,
+                source_match=best_sim,
+                source_found=has_source,
+                deepfake_score=dfake,
+                crowd_reports=crowd,
+                content_summary=f"Text input analyzed: {post.title[:100]}",
             )
         )
 
@@ -1100,3 +1152,213 @@ async def validate(generate_response: GenerateResponse):
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ── Video / Audio Analysis Helpers ────────────────────────────────────────────
+
+
+def _video_claims_to_validated_posts(
+    analysis_output,
+    verified_claims: list,
+    input_type: str = "video",
+    video_title: str | None = None,
+    video_url: str | None = None,
+) -> list[ValidatedPost]:
+    """
+    Convert video pipeline output (VideoAnalysisOutput + list[VerifiedClaim])
+    into the ValidatedPost format that the frontend understands.
+    """
+    from video.schemas import VerifiedClaim as VClaim
+
+    posts: list[ValidatedPost] = []
+    for vc in verified_claims:
+        # Build sources list from matches
+        sources = []
+        best_sim = 0.0
+        for m in vc.matches:
+            if m.source_url and m.source_url not in sources:
+                sources.append(m.source_url)
+            best_sim = max(best_sim, m.similarity)
+
+        has_source = 100.0 if sources else 0.0
+        sim_pct = round(best_sim * 100, 1)
+
+        # Determine verdict
+        if vc.verification_label == "verified":
+            verdict = "MISINFORMATION DETECTED"
+            trust = round(max(10, 100 - sim_pct), 1)  # lower trust = more misinformation
+            ai_assessment = "AI Assessment: We found evidence opposing this claim."
+        elif vc.verification_label == "source_unavailable":
+            verdict = "SOURCES UNAVAILABLE"
+            trust = 50.0
+            ai_assessment = "AI Assessment: We could not verify this claim due to unavailable sources."
+        else:
+            verdict = "UNVERIFIED"
+            trust = 50.0
+            ai_assessment = "AI Assessment: We did not find any official sources to confirm or deny this claim."
+
+        source_text = sources[0] if sources else "no official source found"
+        
+        if vc.correction and vc.correction.strip():
+            correction_en = f"{ai_assessment} {vc.correction} Source: {source_text}"
+        else:
+            correction_en = f"{ai_assessment} Source: {source_text}"
+
+        correction_hi = _translate_en_to_hi(vc.correction) + f" Source: {source_text}"
+
+        posts.append(
+            ValidatedPost(
+                claim=vc.claim_text,
+                verdict=verdict,
+                trust_score=trust,
+                counter_english=correction_en,
+                counter_hindi=correction_hi,
+                sources=sources,
+                flags=ValidationFlags(
+                    contradicts_pib_fact=vc.verification_label == "verified",
+                    invalid_source_url=False,
+                    trust_score_mismatch=False,
+                    missing_hindi=False,
+                    hallucinated_stats=False,
+                ),
+                llm_confidence=round(sim_pct * 0.8, 1),  # approximate from similarity
+                source_match=sim_pct,
+                source_found=has_source,
+                deepfake_score=0.0,
+                crowd_reports=0.0,
+                input_type=input_type,
+                content_summary=getattr(analysis_output, 'summary', "No summary available."),
+                video_title=video_title,
+                video_url=video_url,
+            )
+        )
+
+    return posts
+
+
+@app.post("/analyze-video", response_model=ValidateResponse, tags=["Video"])
+async def analyze_video(payload: AnalyzeVideoRequest):
+    """
+    Analyze a video URL for misinformation.
+
+    Steps:
+      1. Download video and extract audio via yt-dlp.
+      2. Transcribe audio via Groq Whisper.
+      3. Run CrewAI agents to extract and fact-check claims.
+      4. Return results in ValidatedPost format.
+
+    Supports: YouTube, X/Twitter, Instagram, Facebook, Reddit.
+    """
+    video_url = (payload.url or "").strip()
+    if not video_url:
+        raise HTTPException(status_code=422, detail="Video URL is required.")
+
+    try:
+        from video.extractor import extract_transcript
+        from video.analyzer import run_video_analysis_crew
+
+        # Step 1+2: Download + transcribe (runs in thread to avoid blocking)
+        extraction = await asyncio.to_thread(extract_transcript, video_url)
+
+        transcript = extraction["transcript"]
+        title = extraction["title"]
+
+        # Step 3: Run analysis crew (also blocking, so offload)
+        analysis_output, verified_claims = await asyncio.to_thread(
+            run_video_analysis_crew, transcript
+        )
+
+        # Step 4: Convert to frontend format
+        validated_posts = _video_claims_to_validated_posts(
+            analysis_output,
+            verified_claims,
+            input_type="video",
+            video_title=title,
+            video_url=video_url,
+        )
+
+        await save_validated_posts([p.model_dump() for p in validated_posts])
+
+        return ValidateResponse(
+            status="success",
+            count=len(validated_posts),
+            posts=validated_posts,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/analyze-audio", response_model=ValidateResponse, tags=["Audio"])
+async def analyze_audio(file: UploadFile = File(...)):
+    """
+    Analyze an uploaded audio file for misinformation.
+
+    Steps:
+      1. Save uploaded file to temp directory.
+      2. Transcribe via Groq Whisper.
+      3. Run CrewAI agents to extract and fact-check claims.
+      4. Return results in ValidatedPost format.
+
+    Accepts: .mp3, .wav, .m4a, .ogg, .flac, .webm
+    """
+    allowed_exts = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".webm"}
+    filename = file.filename or "upload.wav"
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported audio format '{ext}'. Allowed: {', '.join(sorted(allowed_exts))}",
+        )
+
+    tmp_dir = None
+    try:
+        from video.extractor import transcribe_audio_file
+        from video.analyzer import run_video_analysis_crew
+
+        # Save uploaded file to temp location
+        tmp_dir = tempfile.mkdtemp(prefix="truthmates_audio_")
+        tmp_path = os.path.join(tmp_dir, filename)
+        with open(tmp_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # Step 1: Transcribe
+        extraction = await asyncio.to_thread(transcribe_audio_file, tmp_path)
+        transcript = extraction["transcript"]
+
+        # Step 2: Run analysis crew
+        analysis_output, verified_claims = await asyncio.to_thread(
+            run_video_analysis_crew, transcript
+        )
+
+        # Step 3: Convert to frontend format
+        validated_posts = _video_claims_to_validated_posts(
+            analysis_output,
+            verified_claims,
+            input_type="audio",
+            video_title=filename,
+        )
+
+        await save_validated_posts([p.model_dump() for p in validated_posts])
+
+        return ValidateResponse(
+            status="success",
+            count=len(validated_posts),
+            posts=validated_posts,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        if tmp_dir and os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)

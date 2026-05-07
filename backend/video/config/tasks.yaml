@@ -1,0 +1,70 @@
+analyze_video_task:
+  description: >
+    Analyze the following video transcript and extract government-related claims.
+
+    TRANSCRIPT:
+    {transcript}
+
+    Return ONLY a JSON object (no markdown, no commentary) with this exact structure:
+    {{
+      "summary": "2-3 sentence description of what the video is about",
+      "claims": [
+        {{
+          "claim_text": "The specific factual claim made",
+          "misleading_aspect": "What kind of misinformation this represents"
+        }}
+      ]
+    }}
+
+    Rules:
+    - Focus ONLY on claims about government policies, schemes, taxes, statistics, or officials.
+    - Ignore opinions, emotional statements, and non-government topics.
+    - Each claim_text must be a specific, verifiable factual statement.
+    - Each misleading_aspect must explain HOW it could be misleading.
+    - If no government-related claims are found, return at least one claim
+      with claim_text describing the main topic and misleading_aspect as "No government-related misinformation detected".
+  expected_output: >
+    A JSON object with "summary" (string) and "claims" (array of objects
+    with "claim_text" and "misleading_aspect" fields).
+  agent: video_analyst
+
+fact_check_task:
+  description: >
+    Verify the following government-related claims against official sources.
+
+    CLAIMS TO VERIFY:
+    {claims_json}
+
+    Use the EvidenceRetrieveTool to search for evidence. Pass the claims
+    as a JSON array of objects with "title" (set to claim_text) and
+    "description" (set to misleading_aspect) and "label" set to "civic".
+
+    For each claim, return a JSON array (no markdown, no commentary):
+    [
+      {{
+        "claim_text": "The original claim",
+        "misleading_aspect": "The original misleading aspect",
+        "verification_label": "verified | unverified | source_unavailable",
+        "matches": [
+          {{
+            "fact_text": "The verified fact",
+            "similarity": 0.85,
+            "source_url": "https://...",
+            "source_type": "pinecone | google_fact_check"
+          }}
+        ],
+        "correction": "Plain language correction citing the source URL"
+      }}
+    ]
+
+    Rules:
+    - "verified" = evidence found that addresses this claim (similarity >= 0.70)
+    - "unverified" = no matching evidence found
+    - "source_unavailable" = evidence retrieval tool failed
+    - correction must cite the source URL when available
+    - If no evidence found, correction = "No official source found to verify or refute this claim."
+    - Do NOT fabricate sources or statistics
+  expected_output: >
+    A JSON array of verified claim objects with verification_label,
+    matches array, and correction string.
+  agent: fact_checker
