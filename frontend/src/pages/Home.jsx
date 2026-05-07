@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import Particles from "@tsparticles/react"
+import { loadSlim } from "@tsparticles/slim"
 import {
   Activity,
   Send,
@@ -114,8 +116,73 @@ const liveFeed = [
   }
 ]
 
+const particlesOptions = {
+  background: {
+    color: "#080810"
+  },
+  fullScreen: {
+    enable: false
+  },
+  fpsLimit: 60,
+  interactivity: {
+    events: {
+      onHover: {
+        enable: true,
+        mode: "repulse"
+      },
+      resize: true
+    },
+    modes: {
+      repulse: {
+        distance: 120,
+        duration: 0.4
+      }
+    }
+  },
+  particles: {
+    color: {
+      value: ["#ffffff", "#6C00FF"]
+    },
+    links: {
+      color: "#6C00FF",
+      distance: 140,
+      enable: true,
+      opacity: 0.6,
+      width: 1.4
+    },
+    move: {
+      direction: "none",
+      enable: true,
+      outModes: {
+        default: "out"
+      },
+      speed: 0.6
+    },
+    number: {
+      density: {
+        enable: true,
+        area: 900
+      },
+      value: 120
+    },
+    opacity: {
+      value: 1
+    },
+    size: {
+      value: {
+        min: 2,
+        max: 4
+      }
+    }
+  },
+  detectRetina: true
+}
+
 export default function Home() {
   const [seconds, setSeconds] = useState(15)
+  const particlesInit = useCallback(async (engine) => {
+    await loadSlim(engine)
+  }, [])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -130,23 +197,21 @@ export default function Home() {
   return (
     <div className="bg-background-deep text-text-primary min-h-screen flex flex-col">
       <main className="flex-grow">
-        <section className="min-h-screen relative flex items-center justify-center overflow-hidden border-b border-surface-elevated pt-14">
-          <div
-            className="absolute inset-0 z-0 bg-cover bg-center opacity-30"
-            style={{
-              backgroundImage:
-                "url('https://lh3.googleusercontent.com/aida-public/AB6AXuBlXWHrbrFa29PlC3iFPFm-oKsmiNncCPAXQYqHApItGPNtt2vO4ZhzZcMVGJT1eyZZbs1U1yRUw9zU_ObnPU3yAeiXg7xyqZklTNSIcizZeVJp_3Y3zK_AZJEtQjV-GY541--R89QD5dFD6ffeabmkdS1FLdYZrL94Vo88eOaGc33YBfUXK8obT0jVgMoJ9h7mcv8sIGKXGXz9EkgL7NSXgldPcRtZZZF_KlhbgQ7UPMCm_DTXU7Wuea_DBJ7bVxXF56nHPDSKTCUI')"
-            }}
-          ></div>
-          <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent to-background-deep opacity-90"></div>
-          <div className="relative z-10 w-full max-w-7xl px-container-padding flex flex-col items-center text-center gap-card-gap">
+        <section className="min-h-screen relative flex items-center justify-center overflow-hidden border-b border-surface-elevated pt-20 pb-20">
+          <Particles className="absolute inset-0 z-0" options={particlesOptions} init={particlesInit} />
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent to-background-deep opacity-60"></div>
+          <div className="relative z-10 w-full max-w-7xl px-container-padding flex flex-col items-center text-center gap-6">
             <h1 className="font-hero-display text-hero-display text-white max-w-4xl tracking-tight">
-              Misinformation spreads in
-              <br />
-              <span className="text-accent-electric tabular-nums">{counter}</span>
+              Every Lie Has a Timer.
             </h1>
+            <div className="text-accent-electric tabular-nums text-5xl sm:text-6xl lg:text-7xl font-data-num tracking-[0.2em]">
+              {counter}
+            </div>
+            <p className="font-body-base text-body-base text-on-surface-variant italic text-sm sm:text-base">
+              हर झूठ का एक वक्त होता है।
+            </p>
             <p className="font-body-base text-body-base text-on-surface-variant max-w-2xl mt-4">
-              TruthMates detects, verifies, and counters civic fake news before it spreads.
+              TruthMates detects, verifies and counters civic misinformation before it spreads.
             </p>
             <div className="flex flex-wrap gap-4 mt-8 justify-center">
               <Link
@@ -162,16 +227,17 @@ export default function Home() {
                 See How It Works
               </a>
             </div>
-            <div className="flex flex-wrap justify-center gap-4 mt-12 w-full max-w-4xl">
+            <div className="w-full max-w-4xl h-px bg-surface-elevated/60 shadow-[0_0_12px_rgba(94,43,255,0.45)] mt-10"></div>
+            <div className="flex flex-wrap justify-center gap-6 mt-10 w-full max-w-4xl">
               {statPills.map((pill) => {
                 const Icon = pill.icon
                 return (
                   <div
                     key={pill.label}
-                    className="bg-surface-base border border-surface-elevated px-6 py-3 rounded flex items-center gap-3"
+                    className="bg-surface-base border border-surface-elevated px-8 py-4 rounded flex items-center gap-3 shadow-[0_0_14px_rgba(94,43,255,0.25)]"
                   >
-                    <Icon className="h-4 w-4 text-success-neon" />
-                    <span className="font-data-num text-data-num text-white">{pill.label}</span>
+                    <Icon className="h-5 w-5 text-success-neon" />
+                    <span className="font-data-num text-[16px] text-white">{pill.label}</span>
                   </div>
                 )
               })}
@@ -179,7 +245,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="protocol" className="py-24 px-container-padding bg-surface-base border-b border-surface-elevated">
+        <section id="protocol" className="py-28 px-container-padding bg-surface-base border-b border-surface-elevated">
           <div className="max-w-7xl mx-auto">
             <h2 className="font-headline-lg text-headline-lg text-white mb-12 text-center">Protocol Operation</h2>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 relative">
@@ -209,7 +275,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="py-24 px-container-padding bg-background-deep border-b border-surface-elevated overflow-hidden">
+        <section className="py-28 px-container-padding bg-background-deep border-b border-surface-elevated overflow-hidden">
           <div className="max-w-7xl mx-auto mb-12 flex justify-between items-end">
             <div>
               <h2 className="font-headline-lg text-headline-lg text-white">Meet the Intelligence Behind TruthMates</h2>
@@ -236,7 +302,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="py-24 px-container-padding bg-surface-base border-b border-surface-elevated">
+        <section className="py-28 px-container-padding bg-surface-base border-b border-surface-elevated">
           <div className="max-w-7xl mx-auto">
             <h2 className="font-headline-lg text-headline-lg text-white mb-8">Live Claims Being Analyzed Right Now</h2>
             <div className="bg-background-deep border border-surface-elevated rounded overflow-hidden">
