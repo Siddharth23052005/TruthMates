@@ -2,7 +2,7 @@
 TruthMatesCrew — CrewAI crew that scrapes PIB and MyGov RSS feeds,
 cleans the results, and returns a structured JSON list of civic posts.
 
-LLM: Groq LLaMA 3.1 8B (groq/llama-3.1-8b-instant) for testing
+LLM: Cerebras LLaMA 3.1 8B (llama3.1-8b)
 Process: Sequential (fetch -> clean)
 """
 
@@ -36,10 +36,11 @@ class TruthMatesCrew:
     # -- Shared LLM ------------------------------------------------------------
 
     def _llm(self) -> LLM:
-        """Return a Groq LLaMA 3.3 70B LLM instance."""
+        """Return a Cerebras LLaMA 3.1 8B LLM instance."""
         return LLM(
-            model="groq/llama-3.1-8b-instant",
-            api_key=os.environ["GROQ_API_KEY"],
+            model="llama3.1-8b",
+            api_key=os.environ["CEREBRAS_API_KEY"],
+            base_url="https://api.cerebras.ai/v1",
             temperature=0.0,  # Deterministic for data tasks
         )
 

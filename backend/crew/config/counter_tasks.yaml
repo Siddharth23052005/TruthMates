@@ -14,10 +14,6 @@ generate_counter_info_task:
     - link
     - correction_body
   expected_output: >
-    [
-      {
-        "link": "https://pib.gov.in/...",
-        "correction_body": "Official sources confirm this claim."
-      }
-    ]
+    A JSON array of objects with fields: link, correction_body.
   agent: counter_info_generator
+  cache: false

@@ -1,14 +1,15 @@
 """
 TruthMates Backend — FastAPI Application
-==========================================
-Exposes a POST /scrape endpoint that:
-    1. Kicks off the TruthMates CrewAI crew
-  2. Parses the resulting JSON
-  3. Persists records to MongoDB Atlas (upsert by link)
-  4. Returns the full structured response
+========================================
+Exposes endpoints that:
+    1. Kick off the TruthMates CrewAI workflow.
+    2. Parse the resulting JSON.
+    3. Persist records to MongoDB Atlas (upsert by link).
+    4. Return structured responses.
+    5. Analyze raw claims via /analyze.
 
 Run:
-  uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
 
 import asyncio
@@ -18,6 +19,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -34,6 +36,8 @@ from crew.evidence_crew import EvidenceRetrieverCrew
 from crew.counter_info_crew import CounterInfoCrew
 from crew.output_validator_crew import OutputValidatorCrew
 from crew.monitoring_crew import MonitoringCrew
+from crew.tools.classify_tool import CivicClassifyTool
+from crew.tools.evidence_tool import EvidenceRetrieveTool
 from db.mongo import (
     ping_db,
     save_posts,
@@ -121,6 +125,10 @@ _MONITOR_MAX_RETRIES = 2
 _MONITOR_PREVIEW_CHARS = 1200
 
 
+class AnalyzeRequest(BaseModel):
+    claim: str
+
+
 def _is_rate_limit_error(message: str) -> bool:
     lowered = message.lower()
     return (
@@ -128,6 +136,15 @@ def _is_rate_limit_error(message: str) -> bool:
         or "rate_limit" in lowered
         or "rate_limit_exceeded" in lowered
     )
+
+
+def _parse_tool_json(text: str) -> list[dict]:
+    clean_text = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`")
+    try:
+        parsed = json.loads(clean_text)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 async def _kickoff_with_retry(crew_instance, inputs: dict):
@@ -443,6 +460,75 @@ async def monitor_status():
     }
 
 
+@app.post("/analyze", response_model=ValidateResponse, tags=["Analyzer"])
+async def analyze(payload: AnalyzeRequest):
+    """
+    Analyze a raw claim directly without RSS scraping.
+
+    Steps:
+      1. Wrap claim into a single CivicPost.
+      2. Run classifier -> evidence -> generator -> validator.
+      3. Return validated outputs.
+    """
+    claim_text = (payload.claim or "").strip()
+    if not claim_text:
+        raise HTTPException(status_code=422, detail="Claim text is required.")
+
+    now = datetime.now(timezone.utc)
+    manual_post = CivicPost(
+        title=claim_text,
+        description=claim_text[:_MAX_DESCRIPTION_CHARS],
+        link=f"manual://{uuid4()}",
+        pub_date=None,
+        source="Manual",
+        scraped_at=now,
+    )
+
+    posts_json = json.dumps([manual_post.model_dump(mode="json")], ensure_ascii=True)
+
+    classifier_tool = CivicClassifyTool()
+    classified_raw = classifier_tool._run(posts_json)
+    classified_items = _parse_tool_json(classified_raw)
+    if not classified_items:
+        return ValidateResponse(status="success", count=0, posts=[])
+
+    civic_posts: list[ClassifiedPost] = []
+    for item in classified_items:
+        if item.get("label") != "civic":
+            continue
+        civic_posts.append(ClassifiedPost(**item))
+
+    await save_classified_posts([p.model_dump() for p in civic_posts])
+    if not civic_posts:
+        return ValidateResponse(status="success", count=0, posts=[])
+
+    evidence_tool = EvidenceRetrieveTool()
+    evidence_payload = json.dumps(
+        [p.model_dump(mode="json") for p in civic_posts],
+        ensure_ascii=True,
+    )
+    verified_raw = evidence_tool._run(evidence_payload)
+    verified_items = _parse_tool_json(verified_raw)
+    if not verified_items:
+        return ValidateResponse(status="success", count=0, posts=[])
+
+    verified_posts: list[VerifiedPost] = []
+    for item in verified_items:
+        verified_posts.append(VerifiedPost(**item))
+
+    await save_verified_posts([p.model_dump() for p in verified_posts])
+
+    counter_posts = await _run_generate(
+        VerifyResponse(
+            status="manual",
+            count=len(verified_posts),
+            posts=verified_posts,
+        ),
+        use_monitor=False,
+    )
+    return await _run_validate(counter_posts, use_monitor=False)
+
+
 @app.post("/scrape", response_model=ValidateResponse, tags=["Scraper"])
 async def scrape():
     """
@@ -688,7 +774,7 @@ async def verify(classify_response: ClassifyResponse):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-async def _run_generate(verify_response: VerifyResponse) -> list[CounterInfoPost]:
+async def _run_generate(verify_response: VerifyResponse, use_monitor: bool = True) -> list[CounterInfoPost]:
     crew_instance = CounterInfoCrew()
     trimmed_posts: list[dict] = []
     for post in verify_response.posts[:_MAX_POSTS_PER_RUN]:
@@ -726,11 +812,14 @@ async def _run_generate(verify_response: VerifyResponse) -> list[CounterInfoPost
             )
         return data
 
-    correction_data = await _run_with_monitor(
-        "counter_info",
-        {"posts_json": posts_json},
-        _run_counter_info,
-    )
+    if use_monitor:
+        correction_data = await _run_with_monitor(
+            "counter_info",
+            {"posts_json": posts_json},
+            _run_counter_info,
+        )
+    else:
+        correction_data = await _run_counter_info()
 
     corrections_by_link: dict[str, str] = {}
     for item in correction_data:
@@ -784,7 +873,10 @@ class _ValidationPayload(BaseModel):
     items: list[_ValidationItem]
 
 
-async def _run_validate(counter_posts: list[CounterInfoPost]) -> ValidateResponse:
+async def _run_validate(
+    counter_posts: list[CounterInfoPost],
+    use_monitor: bool = True,
+) -> ValidateResponse:
     crew_instance = OutputValidatorCrew()
 
     payload_items = []
@@ -830,11 +922,14 @@ async def _run_validate(counter_posts: list[CounterInfoPost]) -> ValidateRespons
             detail="Validator output is missing items array.",
         )
 
-    validated_payload = await _run_with_monitor(
-        "validator",
-        {"posts_json": posts_json},
-        _run_validator,
-    )
+    if use_monitor:
+        validated_payload = await _run_with_monitor(
+            "validator",
+            {"posts_json": posts_json},
+            _run_validator,
+        )
+    else:
+        validated_payload = await _run_validator()
 
     if hasattr(validated_payload, "model_dump"):
         validated_payload = validated_payload.model_dump()

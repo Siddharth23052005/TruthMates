@@ -19,27 +19,14 @@ validate_output_task:
     5) Hallucinated statistics: flag if counter_english includes numbers or
        statistics not supported by any match.fact_text.
 
-    Output MUST be JSON with a top-level object:
-    {
-      "items": [
-        {
-          "link": "...",
-          "verdict": "TRUE|FALSE|MISLEADING|UNVERIFIED",
-          "flags": {
-            "contradicts_pib_fact": false,
-            "invalid_source_url": false,
-            "trust_score_mismatch": false,
-            "missing_hindi": false,
-            "hallucinated_stats": false
-          }
-        }
-      ]
-    }
+    Output MUST be JSON with a top-level object containing an items array.
+    Each item must include: link, verdict, and flags (contradicts_pib_fact,
+    invalid_source_url, trust_score_mismatch, missing_hindi, hallucinated_stats).
 
     Do not call any external tools or web search (including brave_search).
   expected_output: >
-    {"items": [{"link": "https://pib.gov.in/...", "verdict": "TRUE",
-      "flags": {"contradicts_pib_fact": false, "invalid_source_url": false,
-      "trust_score_mismatch": false, "missing_hindi": false,
-      "hallucinated_stats": false}}]}
+    A JSON object with an items array. Each item includes link, verdict, and
+    flags (contradicts_pib_fact, invalid_source_url, trust_score_mismatch,
+    missing_hindi, hallucinated_stats).
   agent: output_validator
+  cache: false

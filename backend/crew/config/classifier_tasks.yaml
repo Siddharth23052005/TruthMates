@@ -11,18 +11,8 @@ classify_posts_task:
     label, confidence, language, needs_review.
     Do not call any external tools or web search (including brave_search).
   expected_output: >
-    A JSON array of posts with classification metadata. Example:
-    [
-      {
-        "title": "Government launches new scheme",
-        "description": "Clean description",
-        "link": "https://pib.gov.in/...",
-        "pub_date": "2026-05-01T10:00:00",
-        "source": "PIB",
-        "label": "civic",
-        "confidence": 0.92,
-        "language": "en",
-        "needs_review": false
-      }
-    ]
+    A JSON array of posts with classification metadata fields: title,
+    description, link, pub_date, source, label, confidence, language,
+    needs_review.
   agent: civic_classifier
+  cache: false

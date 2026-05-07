@@ -1,6 +1,6 @@
 """
 OutputValidatorCrew — CrewAI crew that validates counter-info outputs.
-LLM: Groq LLaMA 3.3 70B (groq/llama-3.3-70b-versatile)
+LLM: Cerebras LLaMA 3.1 8B (llama3.1-8b)
 """
 
 import os
@@ -26,8 +26,9 @@ class OutputValidatorCrew:
 
     def _llm(self) -> LLM:
         return LLM(
-            model="groq/llama-3.3-70b-versatile",
-            api_key=os.environ["GROQ_API_KEY"],
+            model="llama3.1-8b",
+            api_key=os.environ["CEREBRAS_API_KEY"],
+            base_url="https://api.cerebras.ai/v1",
             temperature=0.0,
         )
 

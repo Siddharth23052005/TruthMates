@@ -17,17 +17,10 @@ fetch_rss_task:
     Return the complete raw JSON array of all items from both feeds.
     Do not call any external tools or web search (including brave_search).
   expected_output: >
-    A JSON array of raw civic post objects, one per RSS item. Example:
-    [
-      {{
-        "title": "Government launches new scheme",
-        "description": "<p>Full HTML description...</p>",
-        "link": "https://pib.gov.in/...",
-        "pubDate": "Thu, 01 May 2026 10:00:00 +0530",
-        "source": "PIB"
-      }}
-    ]
+    A JSON array of raw civic post objects with fields: title, description,
+    link, pubDate, source.
   agent: rss_scraper
+  cache: false
 
 clean_deduplicate_task:
   description: >
@@ -45,17 +38,9 @@ clean_deduplicate_task:
     Return only the final cleaned and deduplicated JSON array.
     Do not call any external tools or web search (including brave_search).
   expected_output: >
-    A cleaned, deduplicated JSON array of civic posts ready for storage.
-    Example:
-    [
-      {{
-        "title": "Government launches new scheme",
-        "description": "Full description without any HTML tags.",
-        "link": "https://pib.gov.in/...",
-        "pub_date": "2026-05-01T10:00:00",
-        "source": "PIB"
-      }}
-    ]
+    A cleaned, deduplicated JSON array of civic posts with fields: title,
+    description, link, pub_date, source.
   agent: data_cleaner
   context:
     - fetch_rss_task
+  cache: false

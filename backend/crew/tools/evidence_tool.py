@@ -24,7 +24,7 @@ _INDEX_NAME = "truthmates-facts"
 _NAMESPACE = "facts"
 _EMBED_MODEL = "all-MiniLM-L6-v2"
 _TOP_K = 3
-_MATCH_THRESHOLD = 0.6
+_MATCH_THRESHOLD = 0.5
 
 _FACTS_PATH = Path(__file__).resolve().parents[1] / "data" / "verified_facts.json"
 
@@ -78,6 +78,11 @@ class EvidenceRetrieveTool(BaseTool):
             )
             if not claim_text:
                 continue
+
+            print(
+                "[EvidenceRetrieveTool] Pinecone query text:",
+                claim_text[:500],
+            )
 
             claim_vector = _embed_text(claim_text)
 
@@ -173,6 +178,14 @@ def _ensure_indexed_facts(index) -> None:
     if not facts:
         return
 
+    stats = _describe_index(index)
+    total_vectors = _extract_total_vectors(stats)
+    namespace_vectors = _extract_namespace_vectors(stats, _NAMESPACE)
+    print(
+        f"[EvidenceRetrieveTool] Pinecone stats: total_vectors={total_vectors}, "
+        f"namespace_vectors={namespace_vectors}"
+    )
+
     texts = [fact["text"] for fact in facts]
     vectors = _get_embedder().encode(texts, normalize_embeddings=True)
 
@@ -186,6 +199,8 @@ def _ensure_indexed_facts(index) -> None:
         to_upsert.append((fact["id"], vector.tolist(), metadata))
 
     if to_upsert:
+        if total_vectors == 0 or namespace_vectors == 0:
+            print("[EvidenceRetrieveTool] Index empty. Re-indexing facts...")
         index.upsert(vectors=to_upsert, namespace=_NAMESPACE)
 
 
@@ -208,6 +223,11 @@ def _search_pinecone(index, claim_vector) -> list[dict]:
         namespace=_NAMESPACE,
     )
 
+    print(
+        "[EvidenceRetrieveTool] Pinecone similarity scores:",
+        [round(float(m.get("score") or 0.0), 4) for m in query.get("matches", []) or []],
+    )
+
     matches: list[dict] = []
     for match in query.get("matches", []) or []:
         metadata = match.get("metadata") or {}
@@ -224,6 +244,30 @@ def _search_pinecone(index, claim_vector) -> list[dict]:
         )
 
     return matches
+
+
+def _describe_index(index) -> dict:
+    try:
+        return index.describe_index_stats()
+    except Exception as exc:
+        print(f"[EvidenceRetrieveTool] Failed to describe index stats: {exc}")
+        return {}
+
+
+def _extract_total_vectors(stats: dict) -> int:
+    try:
+        return int(stats.get("total_vector_count") or 0)
+    except Exception:
+        return 0
+
+
+def _extract_namespace_vectors(stats: dict, namespace: str) -> int:
+    try:
+        namespaces = stats.get("namespaces") or {}
+        namespace_entry = namespaces.get(namespace) or {}
+        return int(namespace_entry.get("vector_count") or 0)
+    except Exception:
+        return 0
 
 
 def _search_google_factcheck(claim_text: str, claim_vector) -> list[dict]:

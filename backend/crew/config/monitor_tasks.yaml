@@ -9,11 +9,8 @@ monitor_task:
     Decide whether the output should PASS or FAIL. If any check in checks_json
     is false or error is present, return status FAIL. Otherwise return PASS.
 
-    Output ONLY JSON:
-    {
-      "status": "PASS|FAIL",
-      "notes": ["short reason", "short reason"]
-    }
+    Output ONLY JSON with a status field (PASS or FAIL) and a notes array.
   expected_output: >
-    {"status": "PASS", "notes": ["All checks passed"]}
+    A JSON object with status set to PASS or FAIL, plus a notes array.
   agent: supervisor
+  cache: false
