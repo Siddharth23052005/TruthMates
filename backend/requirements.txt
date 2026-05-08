@@ -49,3 +49,6 @@ httpx>=0.27.0
 # API protection
 slowapi>=0.1.9
 scrapling
+
+# WhatsApp integration
+twilio>=9.0.0
