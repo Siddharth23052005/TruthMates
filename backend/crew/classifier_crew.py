@@ -4,6 +4,8 @@ LLM: Cerebras LLaMA 3.1 8B (llama3.1-8b)
 """
 
 import os
+import json
+import re
 from pathlib import Path
 
 from crewai import Agent, Crew, Process, Task, LLM
@@ -63,3 +65,51 @@ class CivicClassifierCrew:
             process=Process.sequential,
             verbose=True,
         )
+
+
+def classify_headline_description(headline: str, description: str) -> dict:
+    """
+    Classify a single headline+description pair and return structured JSON.
+    """
+    content = {
+        "headline": (headline or "").strip(),
+        "description": (description or "").strip(),
+    }
+    crew_instance = CivicClassifierCrew()
+    result = crew_instance.crew().kickoff(inputs={"posts_json": json.dumps([content], ensure_ascii=True)})
+    raw_text = result.raw if hasattr(result, "raw") else str(result)
+    clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
+
+    verdict_map = {
+        "false": "Misleading",
+        "misleading": "Misleading",
+        "unverified": "Unverified",
+        "unsupported": "Unverified",
+        "true": "Verified",
+        "verified": "Verified",
+    }
+
+    try:
+        parsed = json.loads(clean_text)
+        if isinstance(parsed, list) and parsed:
+            parsed = parsed[0]
+        if isinstance(parsed, dict):
+            raw_verdict = str(
+                parsed.get("verdict") or parsed.get("label") or parsed.get("classification") or "Unverified"
+            ).strip()
+            verdict = verdict_map.get(raw_verdict.lower(), raw_verdict.title() or "Unverified")
+            trust_score = int(float(parsed.get("trust_score", 50)))
+            reasoning = str(parsed.get("reasoning") or parsed.get("explanation") or "Classification completed.")
+            return {
+                "verdict": verdict,
+                "trust_score": max(0, min(100, trust_score)),
+                "reasoning": reasoning,
+            }
+    except Exception:
+        pass
+
+    return {
+        "verdict": "Unverified",
+        "trust_score": 50,
+        "reasoning": "No credible sources confirm this claim.",
+    }

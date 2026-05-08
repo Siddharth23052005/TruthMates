@@ -13,7 +13,7 @@ Upsert strategy: match on 'link' field to prevent duplicates across scrape runs.
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import motor.motor_asyncio
 from dotenv import load_dotenv
@@ -264,3 +264,96 @@ async def ping_db() -> bool:
         return True
     except Exception:
         return False
+
+
+async def recent_topic_exists(topic: str, hours: int = 6) -> bool:
+    """Check whether a topic was stored in the last N hours."""
+    topic = (topic or "").strip().lower()
+    if not topic:
+        return False
+    threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
+    collection = get_db()["trending_results"]
+    count = await collection.count_documents(
+        {"topic_normalized": topic, "timestamp": {"$gte": threshold}},
+        limit=1,
+    )
+    return count > 0
+
+
+async def save_trending_results(records: list[dict]) -> int:
+    """Insert normalized trending monitoring records."""
+    if not records:
+        return 0
+
+    collection = get_db()["trending_results"]
+    docs: list[dict] = []
+    for record in records:
+        topic = (record.get("topic") or "").strip()
+        url = (record.get("url") or "").strip()
+        if not topic or not url:
+            continue
+        timestamp = record.get("timestamp") or datetime.now(timezone.utc)
+        docs.append(
+            {
+                **record,
+                "topic": topic,
+                "topic_normalized": topic.lower(),
+                "timestamp": timestamp,
+            }
+        )
+    if not docs:
+        return 0
+    result = await collection.insert_many(docs)
+    return len(result.inserted_ids)
+
+
+async def get_latest_trending(limit: int = 20) -> list[dict]:
+    """Return latest trending results sorted by newest timestamp first."""
+    collection = get_db()["trending_results"]
+    cursor = collection.find().sort("timestamp", -1).limit(limit)
+    return [doc async for doc in cursor]
+
+
+async def get_heatmap_counts() -> list[dict]:
+    """Aggregate verdict counts grouped by category."""
+    collection = get_db()["trending_results"]
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$category",
+                "total": {"$sum": 1},
+                "misleading": {
+                    "$sum": {
+                        "$cond": [{"$eq": [{"$toLower": "$verdict"}, "misleading"]}, 1, 0]
+                    }
+                },
+                "unverified": {
+                    "$sum": {
+                        "$cond": [{"$eq": [{"$toLower": "$verdict"}, "unverified"]}, 1, 0]
+                    }
+                },
+                "verified": {
+                    "$sum": {
+                        "$cond": [{"$eq": [{"$toLower": "$verdict"}, "verified"]}, 1, 0]
+                    }
+                },
+            }
+        },
+        {"$sort": {"total": -1}},
+    ]
+    return [doc async for doc in collection.aggregate(pipeline)]
+
+async def setup_indexes() -> None:
+    """Create indexes, including TTL for trending_claims."""
+    collection = get_db()["trending_claims"]
+    await collection.create_index("timestamp", expireAfterSeconds=7 * 24 * 3600)
+
+async def get_top_trending_claims(region: str | None = None, limit: int = 10) -> list[dict]:
+    """Fetch top claims sorted by score descending."""
+    collection = get_db()["trending_claims"]
+    query = {}
+    if region:
+        query["region"] = region
+    cursor = collection.find(query).sort("score", -1).limit(limit)
+    return [doc async for doc in cursor]
+

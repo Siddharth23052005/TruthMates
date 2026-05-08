@@ -6,6 +6,7 @@ const navItems = [
   { label: "Citizen Reporter", to: "/citizen-reporter", icon: Mic },
   { label: "Rumor Heatmap", to: "/rumor-heatmap", icon: Map },
   { label: "Social Monitor", to: "/social-monitor", icon: Radio },
+  { label: "Trending", to: "/trending", icon: AlertTriangle },
   { label: "About", to: "/about", icon: Info }
 ]
 

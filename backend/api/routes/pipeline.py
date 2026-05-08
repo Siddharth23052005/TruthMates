@@ -24,6 +24,7 @@ router = APIRouter()
 
 
 @router.post("/analyze", tags=["Analyzer"], dependencies=[Depends(require_public_api_key)])
+@router.post("/api/analyze", tags=["Analyzer"], dependencies=[Depends(require_public_api_key)])
 @limiter.limit(get_settings().public_rate_limit)
 async def analyze(request: Request, payload: AnalyzeRequest):
     return await analyze_claim(payload.claim, request_id=getattr(request.state, "request_id", None))

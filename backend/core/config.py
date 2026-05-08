@@ -17,7 +17,7 @@ class Settings:
 
 def _parse_origins(value: str) -> list[str]:
     origins = [item.strip() for item in (value or "").split(",") if item.strip()]
-    return origins or ["http://localhost:5173"]
+    return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 def get_settings() -> Settings:

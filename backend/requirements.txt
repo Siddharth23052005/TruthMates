@@ -52,3 +52,8 @@ scrapling
 
 # WhatsApp integration
 twilio>=9.0.0
+apscheduler
+pytrends
+newsapi-python
+pymongo
+feedparser

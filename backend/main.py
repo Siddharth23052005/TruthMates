@@ -20,9 +20,11 @@ from api.routes.monitor import router as monitor_router
 from api.routes.pipeline import router as pipeline_router
 from api.routes.social import router as social_router
 from api.routes.whatsapp import router as whatsapp_router
+from api.routes.trending import router as trending_router
 from core.config import get_settings
 from core.logging import configure_logging, get_logger, log_event
-from db.mongo import ping_db
+from db.mongo import ping_db, setup_indexes
+from scheduler import start_scheduler, stop_scheduler
 
 configure_logging()
 logger = get_logger("truthmates.app")
@@ -32,6 +34,7 @@ logger = get_logger("truthmates.app")
 async def lifespan(app: FastAPI):
     try:
         await ping_db()
+        await setup_indexes()
         log_event(logger, "startup_complete", database="reachable")
     except Exception as exc:
         log_event(
@@ -41,7 +44,9 @@ async def lifespan(app: FastAPI):
             database="unreachable",
             error=str(exc),
         )
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 def create_app() -> FastAPI:
@@ -104,7 +109,10 @@ def create_app() -> FastAPI:
     app.include_router(media_router)
     app.include_router(social_router)
     app.include_router(whatsapp_router)
+    app.include_router(trending_router)
     return app
 
 
 app = create_app()
+
+# Trigger reload

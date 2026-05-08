@@ -1,8 +1,52 @@
 import Navbar from "../components/Navbar"
 import Footer from "../components/Footer"
 import { Heart, ShieldCheck, Users, CheckCircle2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { apiClient } from "../lib/api"
+
+const POLL_MS = 30000
+
+const formatTimeAgo = (isoTime) => {
+  if (!isoTime) return "just now"
+  const timestamp = new Date(isoTime).getTime()
+  if (Number.isNaN(timestamp)) return "just now"
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
 
 export default function About() {
+  const [liveFeed, setLiveFeed] = useState([])
+
+  useEffect(() => {
+    let mounted = true
+
+    const loadFeed = async () => {
+      try {
+        const response = await apiClient.get("/api/trending")
+        if (!mounted) return
+        setLiveFeed(response?.data?.items || [])
+      } catch {
+        if (!mounted) return
+        setLiveFeed([])
+      }
+    }
+
+    loadFeed()
+    const interval = setInterval(loadFeed, POLL_MS)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [])
+
+  const liveCards = useMemo(() => liveFeed.slice(0, 8), [liveFeed])
+
   return (
     <Navbar>
       <main className="flex-1 overflow-y-auto p-6 md:p-12 relative z-10">
@@ -69,6 +113,44 @@ export default function About() {
               "In the right moment, the right information<br />
               <span className="text-danger-bold">can save lives.</span>"
             </h2>
+          </div>
+
+          <div className="w-full mt-10">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-text-primary">Live Misinformation Dashboard</h2>
+              <span className="text-xs text-on-surface-variant">refreshes every 30s</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {liveCards.map((item) => (
+                <div key={item.id} className="bg-surface-base border border-surface-elevated rounded-xl p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-base font-semibold text-text-primary">{item.topic}</h3>
+                    <span className="px-2 py-1 rounded text-xs font-semibold border border-surface-elevated text-on-surface-variant">
+                      {item.verdict}
+                    </span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mt-2">{item.source || "Unknown source"}</p>
+                  <div className="mt-4">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-on-surface-variant">Trust score</span>
+                      <span className="text-primary font-semibold">{item.trust_score ?? 0}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-surface-elevated rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary"
+                        style={{ width: `${Math.max(0, Math.min(100, Number(item.trust_score) || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mt-3">{formatTimeAgo(item.timestamp)}</p>
+                </div>
+              ))}
+              {!liveCards.length && (
+                <div className="col-span-full bg-surface-base border border-surface-elevated rounded-xl p-5 text-on-surface-variant text-sm">
+                  No live items yet. The monitoring scheduler will populate this feed automatically.
+                </div>
+              )}
+            </div>
           </div>
 
         </div>
