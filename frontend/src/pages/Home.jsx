@@ -97,7 +97,7 @@ const liveFeed = [
   {
     time: "14:02:45",
     claim: "New tax law to confiscate all savings accounts over 1M...",
-    verdict: "FALSE"
+    verdict: "REFUTED"
   },
   {
     time: "14:02:38",
@@ -107,12 +107,12 @@ const liveFeed = [
   {
     time: "14:02:10",
     claim: "Official government portal offline due to cyberattack...",
-    verdict: "TRUE"
+    verdict: "SUPPORTED"
   },
   {
     time: "14:01:55",
     claim: "Water supply contaminated with industrial chemicals in Sector 4...",
-    verdict: "FALSE"
+    verdict: "REFUTED"
   }
 ]
 

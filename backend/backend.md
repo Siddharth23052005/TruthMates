@@ -1,180 +1,72 @@
 # TruthMates Backend Notes
 
-## Overview
-TruthMates backend is a FastAPI service that runs a CrewAI workflow to scrape PIB and MyGov RSS feeds, clean and deduplicate the results, and persist them to MongoDB Atlas. It now also classifies posts as civic or non-civic, retrieves evidence via Pinecone + Google Fact Check API, generates counter-info corrections with trust scores, validates outputs, and monitors every step. The main entrypoint is the `POST /scrape` endpoint, which auto-triggers classification, verification, counter-info, validation, and monitoring. A dedicated `POST /analyze` endpoint bypasses RSS and accepts raw claim text directly.
+## Architecture
+The backend is now split into:
+- `main.py`: FastAPI app wiring, CORS, rate limiting, request IDs, logging
+- `api/routes/`: route modules for health, monitor, pipeline, and media
+- `services/pipeline_service.py`: text pipeline orchestration and shared text helpers
+- `services/media_pipeline_service.py`: video/audio pipeline orchestration
+- `services/classification_service.py`: pre-verification routing gate
+- `services/misleading_service.py`: misleadingness assessment
+- `services/source_weighting_service.py`: source tiering and weighted evidence summaries
+- `services/verdict_service.py`: final verdict synthesis and counter-check logic
+- `core/config.py`, `core/constants.py`, `core/llm.py`, `core/logging.py`: shared configuration and infrastructure
 
-## Current Architecture
-1. FastAPI `POST /scrape` triggers the CrewAI scraping workflow.
-2. RSS fetch agent pulls RSS items from configured URLs.
-3. Data cleaner agent strips HTML, normalizes dates, and deduplicates by link.
-4. Results are upserted into MongoDB with a `scraped_at` timestamp.
-5. Classifier crew runs, labels posts as civic/non-civic, and filters non-civic.
-6. Civic classified posts are stored in MongoDB with `classified_at`.
-7. Evidence retriever crew matches claims to facts (Pinecone + Google Fact Check).
-8. Verification results are stored in MongoDB with `verified_at`.
-9. Counter-info generator creates corrections, Hindi translations, and trust scores.
-10. Counter-info results are stored in MongoDB with `generated_at`.
-11. Output validator checks sources, contradictions, trust-score logic, and Hindi presence.
-12. Validated results are stored in MongoDB with `validated_at`.
-13. Monitoring agent reviews each step and retries failed outputs (max 2 retries).
-14. Monitoring decisions are stored in MongoDB with agent input/output.
-15. The API returns `{status, count, posts}` with validated outputs.
+## Reasoning Flow
+### Text
+1. `POST /analyze` receives a raw claim.
+2. Content routing decides `VERIFY`, `SATIRE_EXIT`, or `OUT_OF_SCOPE_EXIT`.
+3. In-scope claims continue through civic classification, evidence retrieval, misleading assessment, verdict hinting, counter generation, and final validation.
 
-Notes:
-- `POST /analyze` bypasses RSS and runs classify -> evidence -> generate -> validate directly.
-- Monitoring is skipped for `POST /analyze` during counter-info generation and validation.
+### Media
+1. Transcript extraction runs first.
+2. Content routing decides `VERIFY`, `SATIRE_EXIT`, or `OUT_OF_SCOPE_EXIT`.
+3. In-scope media continues through claim extraction, shared evidence retrieval, misleading assessment, verdict synthesis, and final formatting.
+4. Partial downstream failures return `pipeline_status="partial_failure"` with `pipeline_error`.
 
-## Key Files
-- `main.py`: FastAPI app, routes, CORS, crew kickoff, JSON parsing, persistence.
-- `crew/truthmates_crew.py`: CrewAI wiring (agents, tasks, Cerebras LLM).
-- `crew/classifier_crew.py`: CrewAI classifier crew (CivicClassifyTool).
-- `crew/evidence_crew.py`: CrewAI evidence retriever crew (EvidenceRetrieveTool).
-- `crew/counter_info_crew.py`: CrewAI counter-info generator crew.
-- `crew/output_validator_crew.py`: CrewAI output validator crew.
-- `crew/monitoring_crew.py`: CrewAI supervisor monitoring crew.
-- `crew/config/agents.yaml`: Agent roles, goals, and backstories.
-- `crew/config/tasks.yaml`: Task flow and expected outputs.
-- `crew/config/classifier_agents.yaml`: Classifier agent config.
-- `crew/config/classifier_tasks.yaml`: Classifier task config.
-- `crew/config/counter_agents.yaml`: Counter-info agent config.
-- `crew/config/counter_tasks.yaml`: Counter-info task config.
-- `crew/config/validator_agents.yaml`: Output validator agent config.
-- `crew/config/validator_tasks.yaml`: Output validator task config.
-- `crew/config/monitor_agents.yaml`: Monitoring supervisor config.
-- `crew/config/monitor_tasks.yaml`: Monitoring task config.
-- `crew/tools/rss_tool.py`: RSS fetch tool (requests + BeautifulSoup XML parser).
-- `crew/tools/clean_tool.py`: Cleaning + dedup tool (HTML strip, ISO dates).
-- `crew/tools/classify_tool.py`: BERT/IndicBERT classifier tool.
-- `crew/tools/evidence_tool.py`: Pinecone + Google Fact Check evidence retriever.
-- `crew/tools/url_check_tool.py`: URL reachability checker for validation.
-- `crew/data/verified_facts.json`: Seed PIB facts (replace placeholders with real facts).
-- `db/mongo.py`: Motor async client, upsert by `link`, `scraped_at` timestamp.
-- `models/schemas.py`: Pydantic models for posts and API response.
-- `.env.example`: Required environment variables and default RSS URLs.
+## Verdict Model
+Analysis verdicts:
+- `SUPPORTED`
+- `REFUTED`
+- `MISLEADING`
+- `UNVERIFIED`
+- `INSUFFICIENT_EVIDENCE`
+- `SATIRE`
+- `OUT_OF_SCOPE`
 
-## Environment Variables
-- `CEREBRAS_API_KEY`: Cerebras API key for the CrewAI LLM.
-- `TOGETHER_API_KEY`: Together AI API key for LLM fallback.
-- `MONGODB_URI`: MongoDB Atlas connection string.
-- `MONGODB_DB_NAME`: Database name (default: `truthmates`).
-- `PIB_RSS_URL`: PIB RSS feed URL.
-- `MYGOV_RSS_URL`: MyGov RSS feed URL.
-- `PINECONE_API_KEY`: Pinecone API key.
-- `PINECONE_CLOUD`: Pinecone cloud provider (default: aws).
-- `PINECONE_REGION`: Pinecone region (default: us-east-1).
-- `GOOGLE_FACT_CHECK_API_KEY`: Google Fact Check API key.
+Monitor/system labels remain separate:
+- `PASS`
+- `FAIL`
+- `healthy`
+- `degraded`
 
-## Endpoints
-- `GET /`: Health check and DB connectivity status.
-- `POST /scrape`: Runs scrape + clean + classify + verify + generate + validate.
-- `POST /classify`: Classifies a provided scraper output and triggers verify + generate + validate.
-- `POST /verify`: Retrieves evidence and triggers generate + validate.
-- `POST /generate`: Generates counter-info and triggers validation.
-- `POST /validate`: Validates counter-info outputs and returns final verdicts.
-- `POST /analyze`: Accepts a raw claim string and runs classify -> evidence -> generate -> validate.
-- `GET /monitor/logs`: Returns monitoring decisions.
-- `GET /monitor/status`: Returns current pipeline health.
+`verdict_hint` exists only on `VerifiedPost` as an intermediate signal before final validation. The final API payload uses `ValidatedPost.verdict`.
 
-## Data Contract (Analyze Input)
-Analyze input expects:
-- `claim`: raw claim text
+## Storage Model
+- `civic_posts`, `civic_classified`, `civic_verified`, `civic_counter_info`: upsert by `link`
+- `civic_validated`: upsert by `analysis_key`
+- `agent_monitor_logs`: append-only monitor entries
 
-## Data Contract (Scrape Output)
-Each post has:
-- `title`: headline text
-- `description`: cleaned text with HTML removed
-- `link`: canonical URL
-- `pub_date`: ISO 8601 string or null
-- `source`: feed name (PIB or MyGov)
-- `scraped_at`: UTC timestamp added during persistence
+## Security and Access
+- `ALLOWED_ORIGINS` controls CORS origins
+- `TRUTHMATES_PUBLIC_API_KEY` protects public analysis routes
+- `TRUTHMATES_ADMIN_API_KEY` protects monitor/admin routes
+- `slowapi` provides request rate limiting
 
-Classification adds:
-- `label`: civic | non-civic
-- `confidence`: 0-1 confidence score
-- `language`: detected language code
-- `needs_review`: true if confidence < 0.75
+## Monitoring
+- `GET /monitor/logs`: raw monitor decisions
+- `GET /monitor/status`: current pipeline health
+- `GET /monitor/summary`: aggregate validated-count, verdict-count, trust, and timeline data for the dashboard
 
-Verification adds:
-- `verification_label`: verified | unverified
-- `matches`: list of evidence matches with:
-	- `fact_text`
-	- `similarity`
-	- `source_url`
-	- `source_type` (pinecone | google_fact_check)
+## Corpus
+`crew/data/verified_facts.json` is a curated seed corpus used to bootstrap Pinecone. It now includes PIB plus multiple official source tags, but it is still a maintained local corpus rather than a live federated evidence index.
 
-Counter-info adds:
-- `correction_en`: plain language correction with source citation
-- `correction_hi`: Hindi translation (IndicTrans2)
-- `trust_score`: 0-100 score
-- `trust_label`: Red | Yellow | Green
-
-Validation adds:
-- `verdict`: TRUE | FALSE | MISLEADING | UNVERIFIED
-- `flags`: contradiction, invalid URL, trust mismatch, missing Hindi, hallucinated stats
-
-## MongoDB Details
-- Collection: `civic_posts`
-- Upsert key: `link`
-- Each scrape overwrites existing data for the same link and updates `scraped_at`.
-
-- Collection: `civic_classified`
-- Upsert key: `link`
-- Each classification overwrites existing data for the same link and updates `classified_at`.
-
-- Collection: `civic_verified`
-- Upsert key: `link`
-- Each verification overwrites existing data for the same link and updates `verified_at`.
-
-- Collection: `civic_counter_info`
-- Upsert key: `link`
-- Each generation overwrites existing data for the same link and updates `generated_at`.
-
-- Collection: `civic_validated`
-- Upsert key: `claim`
-- Each validation overwrites existing data for the same claim and updates `validated_at`.
-
-- Collection: `agent_monitor_logs`
-- Each decision logs agent_name, input, output, status, retries, timestamp.
-
-## Notes on Feed Handling
-- PIB and MyGov RSS URLs are configurable via `.env`.
-- Fetch failures are handled gracefully, returning an empty list for that feed.
-
-## Run Locally
-1. `pip install -r requirements.txt`
-2. Configure `.env` with Cerebras and MongoDB values.
-3. `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
-4. `curl -X POST http://localhost:8000/scrape`
-
-## Environment
-- Virtual environment manager: uv
-- uv version: 0.11.8
-
-## Progress Log (2026-05-02)
-- Added Civic Classifier Crew (Groq LLaMA 3.3 70B + CivicClassifyTool).
-- Implemented BERT/IndicBERT embedding-based classification with confidence threshold.
-- Added /classify endpoint and auto-triggered classification after /scrape.
-- Stored classified civic posts in MongoDB (civic_classified).
-- Updated schemas and dependencies.
-- Added Evidence Retriever Crew (Groq LLaMA 3.3 70B + EvidenceRetrieveTool).
-- Integrated Pinecone index truthmates-facts with seed facts placeholders.
-- Added /verify endpoint and auto-triggered verification after /classify.
-- Stored verification results in MongoDB (civic_verified).
-- Replaced placeholder facts with 30 PIB-verified facts and added source_tag metadata.
-- Added exponential backoff retry for Groq rate limits and switched to llama-3.1-8b-instant for testing.
-- Reinforced no-external-tools instructions to prevent rogue tool calls.
-- Added limits: truncate descriptions to 300 chars, cap 10 posts per run, and insert 3s delays between pipeline stages.
-- Added Counter-Info Generator Crew and /generate endpoint with trust score and Hindi translation.
-- Added Output Validator Crew and /validate endpoint with retry logic.
-- Updated validator verdict rules and trust-score alignment.
-- Added Monitoring Supervisor crew, logging, and /monitor endpoints.
-
-## Progress Log (2026-05-07)
-- Switched all CrewAI LLM calls from Groq to Cerebras (model `llama3.1-8b`, base URL `https://api.cerebras.ai/v1`).
-- Added 10-second retry backoff (max 5 retries) for Cerebras calls with fallback to Together (`meta-llama/Llama-3.3-70B-Instruct-Turbo`).
-- Added `POST /analyze` to accept raw claim text without RSS scraping.
-- `POST /analyze` calls `CivicClassifyTool` and `EvidenceRetrieveTool` directly to avoid LLM copying/caching of example data.
-- Disabled CrewAI task caching and removed example/demo outputs from task prompts.
-- Added Pinecone debug logging (index stats, query text, similarity scores) and lowered match threshold to 0.50.
-- Skipped monitoring inside `POST /analyze` for counter-info generation and validation.
-- Observed Cerebras queue throttling (`429 queue_exceeded`) during counter-info generation under load.
+## Test Surface
+Pytest coverage lives under `../tests/` and currently covers:
+- schema validation
+- identity generation
+- trust score and verdict normalization helpers
+- content routing normalization
+- misleading/service post-processing
+- Mongo validated upserts
+- mocked route contracts for analyze/media/monitor endpoints

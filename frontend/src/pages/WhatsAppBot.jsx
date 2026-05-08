@@ -132,7 +132,7 @@ export default function WhatsAppBot() {
                       <div className="bg-danger-bold/10 border-b border-danger-bold/20 p-3 flex items-center gap-2">
                         <span className="text-danger-bold text-lg">!</span>
                         <span className="font-badge-label text-[12px] text-danger-bold tracking-widest uppercase">
-                          FALSE / PANIC INDUCING
+                          REFUTED / PANIC INDUCING
                         </span>
                       </div>
                       <div className="p-3">

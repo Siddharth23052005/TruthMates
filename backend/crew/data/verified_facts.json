@@ -178,5 +178,245 @@
     "text": "PM CARES Fund is a public charitable trust not part of Consolidated Fund of India",
     "source_url": "https://pib.gov.in/FactCheck.aspx",
     "source_tag": "PIB-verified"
+  },
+  {
+    "id": "who_fact_001",
+    "text": "WHO says vaccination trains the immune system to recognize and fight disease-causing germs",
+    "source_url": "https://www.who.int/news-room/questions-and-answers/item/vaccines-and-immunization-what-is-vaccination",
+    "source_tag": "WHO-immunization"
+  },
+  {
+    "id": "who_fact_002",
+    "text": "WHO says antibiotics do not treat viral infections such as cold and flu",
+    "source_url": "https://www.who.int/news-room/fact-sheets/detail/antibiotic-resistance",
+    "source_tag": "WHO-antibiotics"
+  },
+  {
+    "id": "who_fact_003",
+    "text": "WHO says public health guidance should be verified through official health authorities during outbreaks",
+    "source_url": "https://www.who.int",
+    "source_tag": "WHO-public-health"
+  },
+  {
+    "id": "eci_fact_001",
+    "text": "EVMs used in India are standalone machines and are not connected to the internet",
+    "source_url": "https://www.eci.gov.in",
+    "source_tag": "ECI-EVM"
+  },
+  {
+    "id": "eci_fact_002",
+    "text": "The Model Code of Conduct comes into force from the date the election schedule is announced",
+    "source_url": "https://www.eci.gov.in",
+    "source_tag": "ECI-ModelCode"
+  },
+  {
+    "id": "eci_fact_003",
+    "text": "Voter registration and electoral roll updates are handled through Election Commission processes and notified forms",
+    "source_url": "https://voters.eci.gov.in",
+    "source_tag": "ECI-VoterServices"
+  },
+  {
+    "id": "uidai_fact_001",
+    "text": "Aadhaar is proof of identity and residence, not proof of citizenship",
+    "source_url": "https://uidai.gov.in",
+    "source_tag": "UIDAI-Identity"
+  },
+  {
+    "id": "uidai_fact_002",
+    "text": "UIDAI does not ask residents to share OTP, PIN, or bank details over phone calls for Aadhaar updates",
+    "source_url": "https://uidai.gov.in",
+    "source_tag": "UIDAI-FraudAlert"
+  },
+  {
+    "id": "rbi_fact_001",
+    "text": "RBI is the central bank of India and issues banknotes in most denominations",
+    "source_url": "https://www.rbi.org.in",
+    "source_tag": "RBI-Banknotes"
+  },
+  {
+    "id": "rbi_fact_002",
+    "text": "The Digital Rupee is a central bank digital currency issued by the Reserve Bank of India",
+    "source_url": "https://www.rbi.org.in",
+    "source_tag": "RBI-CBDC"
+  },
+  {
+    "id": "rbi_fact_003",
+    "text": "Banks and RBI do not ask customers to share OTP, CVV, or full card PIN for KYC, refunds, or account updates",
+    "source_url": "https://www.rbi.org.in",
+    "source_tag": "RBI-FraudAlert"
+  },
+  {
+    "id": "dicgc_fact_001",
+    "text": "Bank deposits are insured up to Rs 5 lakh per depositor per bank by DICGC",
+    "source_url": "https://www.dicgc.org.in",
+    "source_tag": "DICGC-DepositInsurance"
+  },
+  {
+    "id": "npci_fact_001",
+    "text": "A UPI PIN is required to authorize a debit transaction and should not be shared with anyone",
+    "source_url": "https://www.npci.org.in",
+    "source_tag": "NPCI-UPIPIN"
+  },
+  {
+    "id": "npci_fact_002",
+    "text": "Receiving money on UPI does not require entering a UPI PIN, while collect requests should be checked carefully before approval",
+    "source_url": "https://www.npci.org.in",
+    "source_tag": "NPCI-CollectRequest"
+  },
+  {
+    "id": "mohfw_fact_001",
+    "text": "Ayushman Bharat PM-JAY provides health cover of up to Rs 5 lakh per eligible family per year",
+    "source_url": "https://www.mohfw.gov.in",
+    "source_tag": "MOHFW-PMJAY"
+  },
+  {
+    "id": "mohfw_fact_002",
+    "text": "Routine immunization schedules in India are issued through official public health authorities",
+    "source_url": "https://www.mohfw.gov.in",
+    "source_tag": "MOHFW-Immunization"
+  },
+  {
+    "id": "nha_fact_001",
+    "text": "Ayushman Bharat beneficiary verification happens through official eligibility records and Ayushman Bharat systems",
+    "source_url": "https://nha.gov.in",
+    "source_tag": "NHA-Eligibility"
+  },
+  {
+    "id": "agri_fact_001",
+    "text": "PM-KISAN income support is paid in three equal installments to eligible farmer families",
+    "source_url": "https://pmkisan.gov.in",
+    "source_tag": "MinistryAgriculture-PMKisan"
+  },
+  {
+    "id": "rural_fact_001",
+    "text": "MGNREGA provides a legal guarantee of wage employment for rural households that demand work",
+    "source_url": "https://nrega.nic.in",
+    "source_tag": "MinistryRuralDevelopment-MGNREGA"
+  },
+  {
+    "id": "petroleum_fact_001",
+    "text": "PM Ujjwala Yojana provides deposit-free LPG connections to eligible poor households through official enrollment",
+    "source_url": "https://www.pmuy.gov.in",
+    "source_tag": "MinistryPetroleum-Ujjwala"
+  },
+  {
+    "id": "labour_fact_001",
+    "text": "e-Shram registration for unorganized workers is free on official channels",
+    "source_url": "https://eshram.gov.in",
+    "source_tag": "MinistryLabour-eShram"
+  },
+  {
+    "id": "education_fact_001",
+    "text": "The Right to Education framework covers free and compulsory education for children aged 6 to 14",
+    "source_url": "https://www.education.gov.in",
+    "source_tag": "MinistryEducation-RTE"
+  },
+  {
+    "id": "jal_fact_001",
+    "text": "Jal Jeevan Mission focuses on functional household tap water connections in rural India",
+    "source_url": "https://jaljeevanmission.gov.in",
+    "source_tag": "MinistryJalShakti-JJM"
+  },
+  {
+    "id": "msme_fact_001",
+    "text": "MUDRA loans are meant for non-corporate micro and small business activities under official lending channels",
+    "source_url": "https://www.mudra.org.in",
+    "source_tag": "MinistryMSME-MUDRA"
+  },
+  {
+    "id": "aviation_fact_001",
+    "text": "UDAN is a regional connectivity scheme designed to improve affordable air access to underserved areas",
+    "source_url": "https://www.civilaviation.gov.in",
+    "source_tag": "MinistryCivilAviation-UDAN"
+  },
+  {
+    "id": "housing_fact_001",
+    "text": "PMAY Urban is an official housing support scheme for eligible urban households under notified guidelines",
+    "source_url": "https://pmay-urban.gov.in",
+    "source_tag": "MinistryHousing-PMAYUrban"
+  },
+  {
+    "id": "transport_fact_001",
+    "text": "FASTag is used for electronic toll collection on national highways and linked road networks",
+    "source_url": "https://morth.nic.in",
+    "source_tag": "MinistryRoadTransport-FASTag"
+  },
+  {
+    "id": "gst_fact_001",
+    "text": "GST rate changes take effect through official notifications and council decisions, not viral messages",
+    "source_url": "https://www.gst.gov.in",
+    "source_tag": "GSTCouncil-Notifications"
+  },
+  {
+    "id": "tax_fact_001",
+    "text": "PAN requirements for transactions are governed by notified tax rules and official compliance guidance",
+    "source_url": "https://www.incometax.gov.in",
+    "source_tag": "IncomeTax-PANRules"
+  },
+  {
+    "id": "sebi_fact_001",
+    "text": "Investment and securities advice should be verified through SEBI-registered intermediaries and official investor alerts",
+    "source_url": "https://www.sebi.gov.in",
+    "source_tag": "SEBI-InvestorAlert"
+  },
+  {
+    "id": "icmr_fact_001",
+    "text": "Medical treatment claims should rely on evidence-based guidance rather than unsupported health rumors",
+    "source_url": "https://www.icmr.gov.in",
+    "source_tag": "ICMR-EvidenceBasedTreatment"
+  },
+  {
+    "id": "who_fact_004",
+    "text": "WHO advises the public to verify health information with trusted medical and public health sources",
+    "source_url": "https://www.who.int",
+    "source_tag": "WHO-HealthMisinformation"
+  },
+  {
+    "id": "finance_fact_001",
+    "text": "Sukanya Samriddhi Yojana is an official small savings scheme for girl children under government rules",
+    "source_url": "https://www.nsiindia.gov.in",
+    "source_tag": "MinistryFinance-Sukanya"
+  },
+  {
+    "id": "social_fact_001",
+    "text": "Atal Pension Yojana is a government-backed pension scheme with fixed pension slabs under notified terms",
+    "source_url": "https://www.npscra.nsdl.co.in",
+    "source_tag": "SocialSecurity-APY"
+  },
+  {
+    "id": "food_fact_001",
+    "text": "One Nation One Ration Card portability works through the public distribution system under official ration eligibility rules",
+    "source_url": "https://dfpd.gov.in",
+    "source_tag": "FoodDistribution-ONORC"
+  },
+  {
+    "id": "pib_state_001",
+    "text": "State-specific government announcements for Maharashtra should be verified through official state channels or PIB regional releases",
+    "source_url": "https://pib.gov.in",
+    "source_tag": "PIB-Maharashtra-StateBulletin"
+  },
+  {
+    "id": "pib_state_002",
+    "text": "State-specific government announcements for Uttar Pradesh should be verified through official state channels or PIB regional releases",
+    "source_url": "https://pib.gov.in",
+    "source_tag": "PIB-UttarPradesh-StateBulletin"
+  },
+  {
+    "id": "pib_state_003",
+    "text": "State-specific government announcements for Tamil Nadu should be verified through official state channels or PIB regional releases",
+    "source_url": "https://pib.gov.in",
+    "source_tag": "PIB-TamilNadu-StateBulletin"
+  },
+  {
+    "id": "pib_state_004",
+    "text": "State-specific government announcements for Assam should be verified through official state channels or PIB regional releases",
+    "source_url": "https://pib.gov.in",
+    "source_tag": "PIB-Assam-StateBulletin"
+  },
+  {
+    "id": "pib_state_005",
+    "text": "State-specific government announcements for Karnataka should be verified through official state channels or PIB regional releases",
+    "source_url": "https://pib.gov.in",
+    "source_tag": "PIB-Karnataka-StateBulletin"
   }
 ]

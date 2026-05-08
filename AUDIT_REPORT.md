@@ -1,0 +1,376 @@
+# TruthMates Audit Report
+
+## 1. File Path Verification
+
+- Finding:
+  - `backend/crew/config/counter_tasks.yaml` — EXISTS
+  - `backend/crew/config/classifier_tasks.yaml` — EXISTS
+  - `backend/crew/config/classifier_agents.yaml` — EXISTS
+  - `backend/crew/config/evidence_tasks.yaml` — EXISTS
+  - `backend/crew/config/evidence_agents.yaml` — EXISTS
+  - `backend/crew/config/validator_tasks.yaml` — EXISTS
+  - `backend/crew/config/counter_agents.yaml` — EXISTS
+  - `backend/video/config/tasks.yaml` — EXISTS
+  - `backend/video/config/agents.yaml` — EXISTS
+  - `backend/video/analyzer.py` — EXISTS
+  - `backend/video/extractor.py` — EXISTS
+  - `backend/video/schemas.py` — EXISTS
+  - `backend/models/schemas.py` — EXISTS
+  - `backend/db/mongo.py` — EXISTS
+  - `backend/crew/tools/evidence_tool.py` — EXISTS
+  - `backend/crew/tools/classify_tool.py` — EXISTS
+  - `backend/crew/tools/rss_tool.py` — EXISTS
+  - `backend/crew/tools/clean_tool.py` — EXISTS
+  - `backend/crew/tools/url_check_tool.py` — EXISTS
+  - `backend/crew/truthmates_crew.py` — EXISTS
+  - `backend/crew/classifier_crew.py` — EXISTS
+  - `backend/crew/evidence_crew.py` — EXISTS
+  - `backend/crew/counter_info_crew.py` — EXISTS
+  - `backend/crew/output_validator_crew.py` — EXISTS
+  - `backend/crew/monitoring_crew.py` — EXISTS
+  - `backend/main.py` — EXISTS
+  - `backend/requirements.txt` — EXISTS
+  - `frontend/src/pages/Analyze.jsx` — EXISTS
+  - `frontend/src/pages/Home.jsx` — EXISTS
+  - `frontend/src/pages/Dashboard.jsx` — EXISTS
+  - `frontend/src/components/TrustScoreBadge.jsx` — EXISTS
+  - `frontend/src/lib/api.js` — EXISTS
+  - `verified_facts.json` — EXISTS BUT DIFFERENT PATH
+    - Not found at:
+      - `verified_facts.json`
+      - `backend/verified_facts.json`
+      - `backend/data/verified_facts.json`
+    - Found at:
+      - `backend/crew/data/verified_facts.json`
+- Status: PARTIALLY DONE
+- Notes:
+  - All requested code files exist at the exact requested paths.
+  - `verified_facts.json` does not exist in root or `backend/data`; the only copy found is `backend/crew/data/verified_facts.json`.
+
+## 2. backend/main.py Health Check
+
+- Finding:
+  - Current line count: `1149`
+  - Routes defined in `backend/main.py`:
+    - `GET /`
+    - `GET /monitor/logs`
+    - `GET /monitor/status`
+    - `POST /analyze`
+    - `POST /scrape`
+    - `POST /classify`
+    - `POST /verify`
+    - `POST /generate`
+    - `POST /validate`
+    - `POST /analyze-video`
+    - `POST /analyze-audio`
+  - Functions defined in `backend/main.py`:
+    - `lifespan`
+    - `_is_rate_limit_error`
+    - `_is_queue_error`
+    - `_parse_tool_json`
+    - `_kickoff_with_retry`
+    - `_get_translator`
+    - `_translate_en_to_hi`
+    - `_trim_sentences`
+    - `_clamp_score`
+    - `_trust_label`
+    - `_select_source_url`
+    - `_max_pinecone_similarity`
+    - `_compute_trust_score`
+    - `_sources_from_matches`
+    - `_max_pinecone_similarity`
+    - `_select_source_url`
+    - `_extract_confidence`
+    - `_has_hallucination_flags`
+    - `_is_output_complete`
+    - `_truncate_for_log`
+    - `_monitor_review`
+    - `_log_monitor_decision`
+    - `_run_with_monitor`
+    - `health_check`
+    - `monitor_logs`
+    - `monitor_status`
+    - `analyze`
+    - `scrape`
+    - `classify`
+    - `verify`
+    - `_run_generate`
+    - `_run_validate`
+    - `generate`
+    - `validate`
+    - `_video_claims_to_validated_posts`
+    - `analyze_video`
+    - `analyze_audio`
+  - Refactoring status:
+    - No `APIRouter` usage found.
+    - No `include_router` usage found.
+    - All routes are still defined directly in `backend/main.py`.
+  - Duplicate definitions:
+    - `_select_source_url` appears twice.
+    - `_max_pinecone_similarity` appears twice.
+- Status: NEEDS FIXING
+- Notes:
+  - No route delegation to sub-routers or separate route files has started.
+  - `backend/main.py` still contains routing plus orchestration plus helper/business logic.
+
+## 3. Current Verdict Labels in Use
+
+- Finding:
+  - Found in YAML prompt files:
+    - `verified`
+    - `unverified`
+    - `source_unavailable`
+    - `TRUE`
+    - `FALSE`
+    - `MISLEADING`
+    - `UNVERIFIED`
+    - `PASS`
+    - `FAIL`
+  - Found in Python backend files:
+    - `verified`
+    - `unverified`
+    - `source_unavailable`
+    - `MISINFORMATION DETECTED`
+    - `SOURCES UNAVAILABLE`
+    - `UNVERIFIED`
+    - `PASS`
+    - `FAIL`
+    - `UNKNOWN`
+  - Found in frontend JSX/JS files:
+    - `TRUE`
+    - `FALSE`
+    - `MISLEADING`
+    - `UNVERIFIED`
+    - `verified`
+    - `unverified`
+    - `UNKNOWN`
+    - `INVESTIGATING`
+    - `RED`
+    - `YELLOW`
+    - `GREEN`
+    - `PASS`
+    - `FAIL`
+    - `HEALTHY`
+    - `DEGRADED`
+  - Consistency check:
+    - Verdict/status labels are inconsistent across YAML, Python backend, and frontend.
+    - YAML uses `TRUE/FALSE/MISLEADING/UNVERIFIED` plus lowercase `verified/unverified/source_unavailable`.
+    - Backend response shaping uses `MISINFORMATION DETECTED/SOURCES UNAVAILABLE/UNVERIFIED`.
+    - Frontend supports `TRUE/FALSE/MISLEADING/UNVERIFIED` and several monitor/status/color labels.
+- Status: NEEDS FIXING
+- Notes:
+  - Current verdict-related vocabulary is split across multiple taxonomies.
+
+## 4. Prompt Content Audit
+
+- Finding:
+  - `backend/crew/config/counter_tasks.yaml`:
+    - Exact text found:
+      - `clearly state "no official source found" AND provide a critical logical analysis of the claim: explain logically why this claim might be true, misleading, or a common piece of misinformation based on your general knowledge. Provide a smart 'tackle answer' justifying your stance.`
+  - `backend/crew/config/evidence_tasks.yaml`:
+    - CLEAN
+  - `backend/crew/config/validator_tasks.yaml`:
+    - CLEAN
+  - `backend/video/config/tasks.yaml`:
+    - Exact text found:
+      - `- If no evidence found, correction MUST STILL provide a logical analysis of the claim: explain why this claim might be misleading, a common rumor, or logically flawed based on your general knowledge. Provide a 'tackle answer' justifying your stance.`
+  - `backend/video/analyzer.py`:
+    - CLEAN
+    - No inline speculative fact-checking prompt text found in the Python file itself.
+    - The only inline prompt-like text in `backend/video/analyzer.py` is the strict JSON retry suffix:
+      - `You MUST return valid JSON matching this exact schema:`
+      - `No markdown fences. No commentary. ONLY the JSON.`
+- Status: NEEDS FIXING
+- Notes:
+  - Speculative fallback instructions are present in YAML prompt files, not in inline prompt strings inside `backend/video/analyzer.py`.
+
+## 5. MongoDB Upsert Key Audit
+
+- Finding:
+  - Collection: `civic_posts`
+    - Filter key: `{"link": link}`
+    - `upsert=True`: Yes
+  - Collection: `civic_classified`
+    - Filter key: `{"link": link}`
+    - `upsert=True`: Yes
+  - Collection: `civic_verified`
+    - Filter key: `{"link": link}`
+    - `upsert=True`: Yes
+  - Collection: `civic_counter_info`
+    - Filter key: `{"link": link}`
+    - `upsert=True`: Yes
+  - Collection: `civic_validated`
+    - Filter key: `{"claim": claim}`
+    - `upsert=True`: Yes
+  - `save_monitor_log` uses `insert_one`, not `update_one`.
+  - `get_monitor_logs` uses `find`, not `update_one`.
+  - Raw `claim` text used as identity key:
+    - `civic_validated`
+- Status: NEEDS FIXING
+- Notes:
+  - Only the validated collection uses raw `claim` text as the upsert identity.
+
+## 6. requirements.txt Audit
+
+- Finding:
+  - `tenacity` — MISSING
+  - `yt-dlp` — MISSING
+  - `PyYAML` — MISSING
+  - `static-ffmpeg` — MISSING
+  - `pytest` — MISSING
+  - `pytest-asyncio` — MISSING
+  - `httpx` — MISSING
+  - `slowapi` — MISSING
+- Status: NEEDS FIXING
+- Notes:
+  - None of the requested packages are present in `backend/requirements.txt`.
+
+## 7. verified_facts.json Audit
+
+- Finding:
+  - File found at: `backend/crew/data/verified_facts.json`
+  - Entry count: `30`
+  - Fields per entry:
+    - `id`
+    - `text`
+    - `source_url`
+    - `source_tag`
+  - Data quality:
+    - It looks like real populated data, not placeholder keys or empty samples.
+    - Sample entries reference actual schemes and claims such as:
+      - `PM Kisan Samman Nidhi provides Rs 6000 per year to farmers...`
+      - `Ayushman Bharat provides health cover of Rs 5 lakh...`
+      - `One Nation One Ration Card allows migrants to access PDS from any state`
+  - Domain breadth:
+    - It covers multiple government schemes/policies/topics.
+    - It is still narrow in source domain:
+      - `UNIQUE_SOURCE_URLS = 1`
+      - `UNIQUE_SOURCE_TAGS = 1`
+    - All observed entries use:
+      - `source_url = https://pib.gov.in/FactCheck.aspx`
+      - `source_tag = PIB-verified`
+- Status: PARTIALLY DONE
+- Notes:
+  - The corpus is populated and multi-topic within civic/government claims, but it is sourced from one source URL and one source tag.
+
+## 8. Frontend Hardcoded Values Audit
+
+- Finding:
+  - `frontend/src/pages/Home.jsx`
+    - Stats shown:
+      - `10K+ Claims Analyzed` — hardcoded
+      - `94% Accuracy` — hardcoded
+      - `8 Languages Supported` — hardcoded
+    - Protocol text:
+      - `10 AI agents verify your claim against official sources` — hardcoded
+    - Agent cards shown:
+      - `Web Scraper` — partial/loose match to backend `truthmates_crew.py` RSS scraper behavior
+      - `Deepfake Detector` — no matching backend crew file
+      - `Propagation Analyst` — no matching backend crew file
+      - `Historical Matcher` — no matching backend crew file
+      - `Legal Context` — no matching backend crew file
+      - `Evidence Retriever` — matches backend `evidence_crew.py`
+      - `Context Analyzer` — no matching backend crew file
+      - `Source Verifier` — no matching backend crew file
+      - `Sentiment Engine` — no matching backend crew file
+      - `Final Arbiter` — no exact matching backend crew file
+    - Live feed values are hardcoded:
+      - `New tax law to confiscate all savings accounts over 1M...`
+      - `Video showing protests outside national assembly today...`
+      - `Official government portal offline due to cyberattack...`
+      - `Water supply contaminated with industrial chemicals in Sector 4...`
+      - verdicts: `FALSE`, `UNVERIFIED`, `TRUE`, `FALSE`
+  - `frontend/src/pages/Dashboard.jsx`
+    - Real API-backed data:
+      - `apiClient.get("/monitor/logs")`
+      - `apiClient.get("/monitor/status")`
+      - `monitorLogs`
+      - `monitorStatus`
+      - live table claim snippet
+      - live table verdict/status
+      - live table time
+    - Hardcoded / fake values:
+      - `1,248,892`
+      - `+12.4%`
+      - `94%`
+      - `Target: 95%`
+      - `84`
+      - `+3`
+      - live stream `trust: "--"`
+      - score distribution bar heights:
+        - `h-[80%]`
+        - `h-[30%]`
+        - `h-[45%]`
+        - `h-[20%]`
+        - `h-[60%]`
+        - `h-[90%]`
+      - donut center value: `32k`
+      - verdict matrix values:
+        - `TRUE 55%`
+        - `MISLEADING 20%`
+        - `FALSE 25%`
+- Status: NEEDS FIXING
+- Notes:
+  - Home page marketing and agent listings are mostly hardcoded.
+  - Dashboard mixes live monitor data with hardcoded summary metrics and chart values.
+
+## 9. Test Coverage Audit
+
+- Finding:
+  - No actual test files were found in the repo.
+  - Search hits for `pytest`, `test_`, and fixtures came from `IMPLEMENTATION_PLAN.md`, not from runnable test files.
+  - No `tests/` directory was found.
+  - No pytest, jest, vitest, unittest, or similar test files were found.
+- Status: MISSING
+- Notes:
+  - Current repo state is effectively zero test coverage.
+
+## 10. Video Pipeline Audit
+
+- Finding:
+  - `backend/video/analyzer.py`
+    - LLM provider used for claim analysis:
+      - `Groq`
+      - exact model string: `groq/llama-3.1-8b-instant`
+    - Evidence similarity threshold:
+      - `_SIMILARITY_FLOOR = 0.70`
+    - Retrieval architecture:
+      - Uses its own separate retrieval logic inside `EvidenceRetrieveToolForVideo`
+      - It does not import or reuse `backend/crew/tools/evidence_tool.py`
+    - Speculative prompt instruction when evidence is missing:
+      - Not inline in the `.py` file itself
+      - Present in `backend/video/config/tasks.yaml`:
+        - `- If no evidence found, correction MUST STILL provide a logical analysis of the claim: explain why this claim might be misleading, a common rumor, or logically flawed based on your general knowledge. Provide a 'tackle answer' justifying your stance.`
+  - Main text pipeline evidence path:
+    - File: `backend/crew/tools/evidence_tool.py`
+    - Threshold value:
+      - `_MATCH_THRESHOLD = 0.5`
+  - Threshold comparison:
+    - Different
+    - Video pipeline uses `0.70`
+    - Main text evidence path uses `0.5`
+- Status: NEEDS FIXING
+- Notes:
+  - Video retrieval is parallel logic, not shared logic.
+  - Groq is used for video claim analysis; the text crew files are configured around Cerebras/Together.
+
+## 11. CORS and Security Audit
+
+- Finding:
+  - Exact `allow_origins` value in `backend/main.py`:
+    - `allow_origins=["*"]`
+  - Authentication middleware:
+    - None found
+  - Rate limiting middleware:
+    - None found
+  - API key validation anywhere in the codebase:
+    - None found for incoming app requests
+    - Environment API keys exist only for outbound provider access:
+      - `CEREBRAS_API_KEY`
+      - `TOGETHER_API_KEY`
+      - `GROQ_API_KEY`
+      - `PINECONE_API_KEY`
+      - `GOOGLE_FACT_CHECK_API_KEY`
+- Status: NEEDS FIXING
+- Notes:
+  - No inbound auth layer, no rate limiting layer, and open CORS are all present in the current codebase state.

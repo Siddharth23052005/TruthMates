@@ -8,7 +8,7 @@ const trending = [
     claim: "Water supply poisoned in Sector 4...",
     time: "14:02 IST",
     rate: "+4,290/hr",
-    verdict: "FALSE",
+    verdict: "REFUTED",
     color: "danger"
   },
   {
@@ -24,7 +24,7 @@ const trending = [
     claim: "Highway blocked due to protest...",
     time: "10:12 IST",
     rate: "-120/hr",
-    verdict: "TRUE",
+    verdict: "SUPPORTED",
     color: "success"
   }
 ]

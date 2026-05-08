@@ -1,6 +1,8 @@
 validate_output_task:
   description: >
     You will receive posts_json with counter-info outputs and evidence.
+    The full JSON payload is:
+    {posts_json}
 
     Validation checks required for EACH post:
     1) Contradiction with any retrieved PIB fact (flag if counter_english
@@ -8,25 +10,34 @@ validate_output_task:
     2) All cited source URLs are real and reachable. Use UrlCheckTool with the
        list of sources for the post.
     3) Trust score matches verdict logically. Use rules:
-       - If verification_label is "verified" AND a source URL is present, verdict should be TRUE.
-       - If verification_label is "unverified" AND no source URL, verdict should be UNVERIFIED.
-       - If a source URL is present but counter_english contradicts PIB fact, verdict should be MISLEADING.
+       - Respect verdict_hint when it is provided unless the post's own evidence
+         clearly contradicts it.
+       - If verification_label is "source_unavailable", verdict should be INSUFFICIENT_EVIDENCE.
+       - If misleading_reason is present and supported by the evidence, verdict should be MISLEADING.
+       - If strong evidence supports the claim from trusted sources, verdict should be SUPPORTED.
+       - If strong evidence contradicts the claim from trusted sources, verdict should be REFUTED.
+       - If evidence is weak or mixed, verdict should be UNVERIFIED.
        Flag mismatch if verdict conflicts with trust_score label:
-         TRUE -> 71-100 (Green)
+         SUPPORTED -> 71-100 (Green)
+         REFUTED -> 41-70 (Yellow) or lower if evidence is weak
          MISLEADING -> 41-70 (Yellow)
-         UNVERIFIED or FALSE -> 0-40 (Red)
+         UNVERIFIED or INSUFFICIENT_EVIDENCE -> 41-70 (Yellow)
     4) Hindi translation must be present (non-empty).
     5) Hallucinated statistics: flag if counter_english includes numbers or
        statistics not supported by any match.fact_text.
+    6) Overly hedged language: flag if counter_english uses stiff phrases like
+       "it should be noted", "based on the available information",
+       "cannot be definitively concluded", or "appears to suggest".
 
     Output MUST be JSON with a top-level object containing an items array.
     Each item must include: link, verdict, and flags (contradicts_pib_fact,
-    invalid_source_url, trust_score_mismatch, missing_hindi, hallucinated_stats).
+    invalid_source_url, trust_score_mismatch, missing_hindi, hallucinated_stats,
+    overly_hedged_language).
 
     Do not call any external tools or web search (including brave_search).
   expected_output: >
     A JSON object with an items array. Each item includes link, verdict, and
     flags (contradicts_pib_fact, invalid_source_url, trust_score_mismatch,
-    missing_hindi, hallucinated_stats).
+    missing_hindi, hallucinated_stats, overly_hedged_language).
   agent: output_validator
   cache: false

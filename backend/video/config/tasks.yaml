@@ -33,11 +33,12 @@ fact_check_task:
     Verify the following government-related claims against official sources.
 
     CLAIMS TO VERIFY:
-    {claims_json}
+    {posts_json}
 
     Use the EvidenceRetrieveTool to search for evidence. Pass the claims
-    as a JSON array of objects with "title" (set to claim_text) and
-    "description" (set to misleading_aspect) and "label" set to "civic".
+    as `posts_json`: a JSON array of objects with "title" (set to claim_text),
+    "description" (set to misleading_aspect), "label" set to "civic", and
+    "link" as an empty string if unavailable.
 
     For each claim, return a JSON array (no markdown, no commentary):
     [
@@ -58,12 +59,15 @@ fact_check_task:
     ]
 
     Rules:
-    - "verified" = evidence found that addresses this claim (similarity >= 0.70)
+    - "verified" = evidence found that addresses this claim (similarity >= {evidence_match_threshold})
     - "unverified" = no matching evidence found
     - "source_unavailable" = evidence retrieval tool failed
     - correction must cite the source URL when available
-    - If no evidence found, correction = "No official source found to verify or refute this claim."
-    - Do NOT fabricate sources or statistics
+    - If no evidence is found or sources are unavailable, correction must say
+      that the claim could not be verified from trusted sources and that more
+      evidence is needed. Do NOT guess whether it is true or false. Do NOT use
+      general knowledge to fill missing facts.
+    - Do NOT fabricate official sources or statistics if none are found.
   expected_output: >
     A JSON array of verified claim objects with verification_label,
     matches array, and correction string.

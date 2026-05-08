@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, HttpUrl, Field
+from typing import Literal, Optional
+from pydantic import BaseModel, Field
 
 
 class CivicPost(BaseModel):
@@ -56,6 +56,23 @@ class EvidenceMatch(BaseModel):
     source_type: str = Field(..., description="pinecone | google_fact_check")
 
 
+class VideoUnderstanding(BaseModel):
+    """Best-effort human-readable understanding of uploaded video content."""
+
+    description: str
+    visual_context: Optional[str] = None
+    detected_language: str = "unknown"
+    estimated_content_type: str = "UNKNOWN"
+    visible_text: Optional[str] = None
+    confidence: float = 0.0
+    understanding_source: Literal[
+        "vision+transcript",
+        "vision_only",
+        "transcript+metadata",
+        "metadata_only",
+    ] = "metadata_only"
+
+
 class VerifiedPost(ClassifiedPost):
     """Represents a verified post with evidence matches."""
 
@@ -67,6 +84,12 @@ class VerifiedPost(ClassifiedPost):
     deepfake_score: Optional[float] = Field(
         0.0, description="Deepfake score 0-1"
     )
+    content_category: Optional[str] = Field(None, description="Classification category before verification")
+    analysis_route: Optional[str] = Field(None, description="Verification route selected before evidence retrieval")
+    misleading_reason: Optional[str] = Field(None, description="Specific reason the claim misleads when verdict is MISLEADING")
+    source_weight_score: Optional[float] = Field(0.0, description="Weighted evidence score 0-100")
+    countercheck_note: Optional[str] = Field(None, description="Result of contradiction check against strongest opposing evidence")
+    verdict_hint: Optional[str] = Field(None, description="Precomputed verdict suggestion before final validation")
 
 
 class VerifyResponse(BaseModel):
@@ -102,13 +125,24 @@ class ValidationFlags(BaseModel):
     trust_score_mismatch: bool
     missing_hindi: bool
     hallucinated_stats: bool
+    overly_hedged_language: bool = False
 
 
 class ValidatedPost(BaseModel):
     """Represents a validated output with final verdict."""
 
     claim: str
-    verdict: str
+    analysis_key: str = Field(..., description="Stable composite identity for this analysis result")
+    source_ref: Optional[str] = Field(None, description="Stable source reference used to build the analysis key")
+    verdict: Literal[
+        "SUPPORTED",
+        "REFUTED",
+        "MISLEADING",
+        "UNVERIFIED",
+        "OUT_OF_SCOPE",
+        "SATIRE",
+        "INSUFFICIENT_EVIDENCE",
+    ]
     trust_score: float
     counter_english: str
     counter_hindi: str
@@ -124,6 +158,16 @@ class ValidatedPost(BaseModel):
     content_summary: Optional[str] = Field(None, description="Short summary of the input content")
     video_title: Optional[str] = Field(None, description="Video title if input was video/audio")
     video_url: Optional[str] = Field(None, description="Video URL if input was video")
+    content_category: Optional[str] = Field(None, description="Media classification category before fact-checking")
+    analysis_route: Optional[str] = Field(None, description="Route selected by the media classification gate")
+    pipeline_status: Optional[str] = Field("complete", description="complete | short_circuit | partial_failure")
+    pipeline_error: Optional[str] = Field(None, description="Error summary when a pipeline stage fails after input intake")
+    misleading_reason: Optional[str] = Field(None, description="Specific explanation of how the content misleads, when applicable")
+    verdict_reason: Optional[str] = Field(None, description="Human-style explanation for the final verdict")
+    source_weight_score: Optional[float] = Field(0.0, description="Weighted evidence score 0-100")
+    source_weight_summary: Optional[str] = Field(None, description="Short summary of the weighted evidence considered")
+    countercheck_note: Optional[str] = Field(None, description="Summary of the strongest contradiction considered before final verdict")
+    video_understanding: Optional[VideoUnderstanding] = Field(None, description="Best-effort description of uploaded video content")
     validated_at: Optional[datetime] = Field(
         default_factory=datetime.utcnow,
         description="UTC timestamp when this record was validated",
@@ -157,3 +201,12 @@ class MonitorLogsResponse(BaseModel):
     status: str
     count: int
     logs: list[MonitorLog]
+
+
+class MonitorSummaryResponse(BaseModel):
+    status: str
+    total_validated: int
+    verdict_counts: dict[str, int]
+    monitor_status_counts: dict[str, int]
+    average_trust_score: float
+    timeline: list[dict]

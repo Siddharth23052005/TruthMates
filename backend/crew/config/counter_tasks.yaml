@@ -1,11 +1,28 @@
 generate_counter_info_task:
   description: >
     You will receive posts_json with verified claims and evidence matches.
+    The full JSON payload is:
+    {posts_json}
 
     For each post, write a correction_body in plain English using simple words.
-    Keep it to a maximum of 3 sentences. If verification_label is "verified",
-    provide a confirmation statement. If verification_label is "unverified",
-    clearly state "no official source found" in the correction_body.
+    Keep it to a maximum of 3 sentences. Talk like a smart friend, not a legal
+    disclaimer. Use any provided fields such as verdict_hint,
+    misleading_reason, source_weight_score, and countercheck_note.
+
+    If verdict_hint is:
+    - SUPPORTED: explain clearly that trusted sources support the claim.
+    - REFUTED: say directly that trusted sources contradict the claim.
+    - MISLEADING: explain exactly how the framing or missing context misleads.
+    - UNVERIFIED or INSUFFICIENT_EVIDENCE: clearly say the claim could not be
+      verified from trusted sources and that more evidence is required.
+
+    Do not guess whether the claim is true or false, and do not use general
+    knowledge to fill in missing facts.
+    Avoid stiff filler like:
+    - "it should be noted"
+    - "based on the available information"
+    - "cannot be definitively concluded"
+    - "appears to suggest"
 
     Do NOT include any source URL in correction_body; it will be appended later.
     Do not call any external tools or web search (including brave_search).

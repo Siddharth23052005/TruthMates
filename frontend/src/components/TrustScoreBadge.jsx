@@ -1,4 +1,9 @@
 const badgeStyles = {
+  SUPPORTED: "bg-success-neon/15 text-success-neon border-success-neon",
+  REFUTED: "bg-danger-bold/15 text-danger-bold border-danger-bold",
+  INSUFFICIENT_EVIDENCE: "bg-accent-warm/15 text-accent-warm border-accent-warm",
+  SATIRE: "bg-surface-variant text-outline border-outline",
+  OUT_OF_SCOPE: "bg-surface-variant text-outline border-outline",
   TRUE: "bg-success-neon/15 text-success-neon border-success-neon",
   FALSE: "bg-danger-bold/15 text-danger-bold border-danger-bold",
   UNVERIFIED: "bg-accent-warm/15 text-accent-warm border-accent-warm",

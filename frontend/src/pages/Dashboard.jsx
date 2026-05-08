@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import Footer from "../components/Footer"
 import Navbar from "../components/Navbar"
 import TrustScoreBadge from "../components/TrustScoreBadge"
-import { apiBaseUrl, apiClient } from "../lib/api"
+import { adminApiClient, apiBaseUrl } from "../lib/api"
 
 const formatTime = (timestamp) => {
   if (!timestamp) return "--:--:--"
@@ -23,9 +23,19 @@ const formatSnippet = (value, fallback) => {
   return `${text.slice(0, 77)}...`
 }
 
+const emptySummary = {
+  status: "unknown",
+  total_validated: 0,
+  verdict_counts: {},
+  monitor_status_counts: {},
+  average_trust_score: 0,
+  timeline: []
+}
+
 export default function Dashboard() {
   const [monitorLogs, setMonitorLogs] = useState([])
   const [monitorStatus, setMonitorStatus] = useState({ status: "unknown", agents: {} })
+  const [monitorSummary, setMonitorSummary] = useState(emptySummary)
   const [errorMessage, setErrorMessage] = useState("")
   const [isLoading, setIsLoading] = useState(true)
 
@@ -42,15 +52,17 @@ export default function Dashboard() {
       }
 
       try {
-        const [logsResponse, statusResponse] = await Promise.all([
-          apiClient.get("/monitor/logs"),
-          apiClient.get("/monitor/status")
+        const [logsResponse, statusResponse, summaryResponse] = await Promise.all([
+          adminApiClient.get("/monitor/logs"),
+          adminApiClient.get("/monitor/status"),
+          adminApiClient.get("/monitor/summary")
         ])
 
         if (!isMounted) return
 
         setMonitorLogs(logsResponse?.data?.logs || [])
         setMonitorStatus(statusResponse?.data || { status: "unknown", agents: {} })
+        setMonitorSummary(summaryResponse?.data || emptySummary)
         setErrorMessage("")
       } catch (error) {
         if (!isMounted) return
@@ -70,7 +82,7 @@ export default function Dashboard() {
       isMounted = false
       clearInterval(intervalId)
     }
-  }, [apiBaseUrl, apiClient])
+  }, [])
 
   const liveStream = useMemo(() => {
     return monitorLogs.map((log, index) => ({
@@ -89,6 +101,16 @@ export default function Dashboard() {
     : isLoading
       ? "Loading monitor logs..."
       : "No monitor logs yet."
+
+  const totalClaimsAnalyzed = monitorSummary?.total_validated || 0
+  const averageTrust = Math.round(monitorSummary?.average_trust_score || 0)
+  const verdictCounts = monitorSummary?.verdict_counts || {}
+  const activePriorityThreats = (verdictCounts.REFUTED || 0) + (verdictCounts.MISLEADING || 0)
+  const supportedPct = totalClaimsAnalyzed ? Math.round(((verdictCounts.SUPPORTED || 0) / totalClaimsAnalyzed) * 100) : 0
+  const misleadingPct = totalClaimsAnalyzed ? Math.round(((verdictCounts.MISLEADING || 0) / totalClaimsAnalyzed) * 100) : 0
+  const refutedPct = totalClaimsAnalyzed ? Math.round(((verdictCounts.REFUTED || 0) / totalClaimsAnalyzed) * 100) : 0
+  const timelineBars = (monitorSummary?.timeline || []).slice(-6)
+  const maxTimelineCount = Math.max(...timelineBars.map((item) => item.count), 1)
 
   return (
     <Navbar topSearchPlaceholder="QUERY DATABASE...">
@@ -114,11 +136,12 @@ export default function Dashboard() {
                 <span className="font-badge-label text-badge-label text-on-surface-variant uppercase">
                   Total Claims Analyzed
                 </span>
-                <span className="text-outline text-[16px]">◎</span>
+                <span className="text-outline text-[16px]">O</span>
               </div>
-              <div className="font-data-num text-[32px] font-bold text-text-primary z-10 mt-2">1,248,892</div>
+              <div className="font-data-num text-[32px] font-bold text-text-primary z-10 mt-2">{totalClaimsAnalyzed}</div>
               <div className="mt-2 text-success-neon font-terminal-log text-terminal-log flex items-center gap-1 z-10">
-                ▲ +12.4% <span className="text-on-surface-variant ml-1">last 24h</span>
+                <span>{timelineBars[timelineBars.length - 1]?.count || 0} recent</span>
+                <span className="text-on-surface-variant ml-1">validated outputs</span>
               </div>
             </div>
 
@@ -126,16 +149,16 @@ export default function Dashboard() {
               <div className="absolute inset-0 bg-gradient-to-br from-success-neon/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
               <div className="flex justify-between items-start mb-2 z-10">
                 <span className="font-badge-label text-badge-label text-on-surface-variant uppercase">
-                  Global Accuracy Rate
+                  Average Trust Score
                 </span>
-                <span className="text-success-neon/60 text-[16px]">✓</span>
+                <span className="text-success-neon/60 text-[16px]">+</span>
               </div>
               <div className="flex items-end gap-3 z-10 mt-2">
-                <div className="font-data-num text-[32px] font-bold text-success-neon">94%</div>
-                <div className="font-terminal-log text-terminal-log text-on-surface-variant mb-1">Target: 95%</div>
+                <div className="font-data-num text-[32px] font-bold text-success-neon">{averageTrust}%</div>
+                <div className="font-terminal-log text-terminal-log text-on-surface-variant mb-1">live average</div>
               </div>
               <div className="h-1 w-full bg-surface-elevated mt-4 rounded-full overflow-hidden z-10">
-                <div className="h-full bg-success-neon w-[94%] relative">
+                <div className="h-full bg-success-neon relative" style={{ width: `${averageTrust}%` }}>
                   <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-r from-transparent to-white/50"></div>
                 </div>
               </div>
@@ -149,9 +172,10 @@ export default function Dashboard() {
                 </span>
                 <span className="text-danger-bold/60 text-[16px]">!</span>
               </div>
-              <div className="font-data-num text-[32px] font-bold text-danger-bold z-10 mt-2">84</div>
+              <div className="font-data-num text-[32px] font-bold text-danger-bold z-10 mt-2">{activePriorityThreats}</div>
               <div className="mt-2 text-danger-bold font-terminal-log text-terminal-log flex items-center gap-1 z-10">
-                ▲ +3 <span className="text-on-surface-variant ml-1">escalated recently</span>
+                <span>{verdictCounts.MISLEADING || 0} misleading</span>
+                <span className="text-on-surface-variant ml-1">{verdictCounts.REFUTED || 0} refuted</span>
               </div>
             </div>
           </div>
@@ -205,21 +229,27 @@ export default function Dashboard() {
             <div className="lg:col-span-4 flex flex-col gap-gutter h-full">
               <div className="bg-surface-base border border-surface-elevated p-4 flex-1 flex flex-col">
                 <h3 className="font-badge-label text-badge-label text-on-surface-variant uppercase mb-4">
-                  Score Distribution (24h)
+                  Score Distribution (Recent)
                 </h3>
                 <div className="flex-1 flex items-end gap-2 px-2 pb-6 relative">
                   <div className="w-full flex justify-between items-end h-full gap-1">
-                    <div className="w-1/6 bg-danger-bold/80 h-[80%] border-t border-danger-bold"></div>
-                    <div className="w-1/6 bg-danger-bold/50 h-[30%] border-t border-danger-bold"></div>
-                    <div className="w-1/6 bg-accent-warm/80 h-[45%] border-t border-accent-warm"></div>
-                    <div className="w-1/6 bg-success-neon/30 h-[20%] border-t border-success-neon"></div>
-                    <div className="w-1/6 bg-success-neon/60 h-[60%] border-t border-success-neon"></div>
-                    <div className="w-1/6 bg-success-neon h-[90%] border-t border-white"></div>
+                    {timelineBars.length ? (
+                      timelineBars.map((item) => (
+                        <div
+                          key={item.date}
+                          className="w-1/6 bg-success-neon/70 border-t border-success-neon"
+                          style={{ height: `${Math.max(12, Math.round((item.count / maxTimelineCount) * 100))}%` }}
+                          title={`${item.date}: ${item.count}`}
+                        ></div>
+                      ))
+                    ) : (
+                      <div className="w-full h-[20%] bg-surface-elevated"></div>
+                    )}
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 text-[9px] font-terminal-log text-on-surface-variant">
-                    <span>0.0</span>
-                    <span>0.5</span>
-                    <span>1.0</span>
+                    <span>{timelineBars[0]?.date || "--"}</span>
+                    <span>{timelineBars[Math.floor(timelineBars.length / 2)]?.date || "--"}</span>
+                    <span>{timelineBars[timelineBars.length - 1]?.date || "--"}</span>
                   </div>
                 </div>
               </div>
@@ -230,12 +260,11 @@ export default function Dashboard() {
                   <div
                     className="w-32 h-32 rounded-full border-8 border-surface-elevated relative flex items-center justify-center"
                     style={{
-                      background:
-                        "conic-gradient(#00F5A0 0% 55%, #F19C79 55% 75%, #FF3366 75% 100%)"
+                      background: `conic-gradient(#00F5A0 0% ${supportedPct}%, #F19C79 ${supportedPct}% ${supportedPct + misleadingPct}%, #FF3366 ${supportedPct + misleadingPct}% 100%)`
                     }}
                   >
                     <div className="w-24 h-24 bg-surface-base rounded-full absolute flex items-center justify-center flex-col">
-                      <span className="font-data-num text-[18px] text-text-primary">32k</span>
+                      <span className="font-data-num text-[18px] text-text-primary">{totalClaimsAnalyzed}</span>
                       <span className="font-badge-label text-[8px] text-on-surface-variant">CLAIMS</span>
                     </div>
                   </div>
@@ -243,21 +272,21 @@ export default function Dashboard() {
                 <div className="mt-4 flex flex-col gap-2 font-terminal-log text-[10px]">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 bg-success-neon"></span> TRUE
+                      <span className="w-2 h-2 bg-success-neon"></span> SUPPORTED
                     </div>
-                    <div className="font-data-num">55%</div>
+                    <div className="font-data-num">{supportedPct}%</div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 bg-accent-warm"></span> MISLEADING
                     </div>
-                    <div className="font-data-num">20%</div>
+                    <div className="font-data-num">{misleadingPct}%</div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 bg-danger-bold"></span> FALSE
+                      <span className="w-2 h-2 bg-danger-bold"></span> REFUTED
                     </div>
-                    <div className="font-data-num">25%</div>
+                    <div className="font-data-num">{refutedPct}%</div>
                   </div>
                 </div>
               </div>

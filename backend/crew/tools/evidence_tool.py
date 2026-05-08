@@ -17,6 +17,8 @@ from pinecone import Pinecone, ServerlessSpec
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
+from core.constants import EVIDENCE_MATCH_THRESHOLD
+
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -24,8 +26,6 @@ _INDEX_NAME = "truthmates-facts"
 _NAMESPACE = "facts"
 _EMBED_MODEL = "all-MiniLM-L6-v2"
 _TOP_K = 3
-_MATCH_THRESHOLD = 0.5
-
 _FACTS_PATH = Path(__file__).resolve().parents[1] / "data" / "verified_facts.json"
 
 
@@ -90,7 +90,7 @@ class EvidenceRetrieveTool(BaseTool):
             matches.extend(_search_pinecone(index, claim_vector))
             matches.extend(_search_google_factcheck(claim_text, claim_vector))
 
-            matches = [m for m in matches if m["similarity"] >= _MATCH_THRESHOLD]
+            matches = [m for m in matches if m["similarity"] >= EVIDENCE_MATCH_THRESHOLD]
             matches = sorted(matches, key=lambda m: m["similarity"], reverse=True)
 
             verification_label = "verified" if matches else "unverified"

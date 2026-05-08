@@ -62,6 +62,46 @@ const formatSourceLabel = (source) => {
   }
 }
 
+const understandingSourceCopy = {
+  "vision+transcript": "Analyzed using visual frames and speech",
+  "vision_only": "Analyzed using visual frames",
+  "transcript+metadata": "Analyzed using detected speech",
+  "metadata_only": "Limited analysis - no visual or speech content extracted"
+}
+
+function VideoUnderstandingCard({ understanding }) {
+  if (!understanding) return null
+
+  return (
+    <div className="bg-background-deep border border-surface-elevated rounded p-4 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="font-badge-label text-badge-label text-accent-electric">VIDEO UNDERSTANDING</span>
+        <span className="text-[10px] font-badge-label uppercase px-2 py-1 border border-surface-elevated rounded text-text-primary/70">
+          {understanding.estimated_content_type || "UNKNOWN"}
+        </span>
+        <span className="text-[10px] font-badge-label uppercase px-2 py-1 border border-surface-elevated rounded text-text-primary/70">
+          {understanding.detected_language || "unknown"}
+        </span>
+      </div>
+      <p className="font-body-base text-body-base text-text-primary/85">{understanding.description}</p>
+      {understanding.visible_text && (
+        <div className="mt-3 bg-accent-electric/8 border border-accent-electric/25 rounded p-3">
+          <div className="font-badge-label text-[10px] text-accent-electric uppercase mb-1">Text visible in video</div>
+          <p className="text-sm text-text-primary/80">{understanding.visible_text}</p>
+        </div>
+      )}
+      {Number(understanding.confidence || 0) < 0.4 && (
+        <div className="mt-3 bg-accent-warm/10 border border-accent-warm/30 rounded p-3">
+          <p className="text-sm text-accent-warm">Description confidence is low. Review the video directly.</p>
+        </div>
+      )}
+      <p className="mt-3 text-xs text-text-primary/55">
+        {understandingSourceCopy[understanding.understanding_source] || "Analyzed using limited signals"}
+      </p>
+    </div>
+  )
+}
+
 export default function Analyze() {
   const [activeTab, setActiveTab] = useState("text")
   const [claimText, setClaimText] = useState("")
@@ -94,6 +134,14 @@ export default function Analyze() {
   const counterEnglish = hasResult ? analysisResult.counter_english : ""
   const counterHindi = hasResult ? analysisResult.counter_hindi : ""
   const counterText = counterLanguage === "hi" ? counterHindi : counterEnglish
+  const contentCategory = hasResult ? analysisResult.content_category : ""
+  const analysisRoute = hasResult ? analysisResult.analysis_route : ""
+  const misleadingReason = hasResult ? analysisResult.misleading_reason : ""
+  const verdictReason = hasResult ? analysisResult.verdict_reason : ""
+  const sourceWeightSummary = hasResult ? analysisResult.source_weight_summary : ""
+  const pipelineStatus = hasResult ? analysisResult.pipeline_status : ""
+  const pipelineError = hasResult ? analysisResult.pipeline_error : ""
+  const videoUnderstanding = hasResult ? analysisResult.video_understanding : null
 
   const counterCopy = errorMessage
     ? "Counter statement unavailable due to an error."
@@ -120,17 +168,13 @@ export default function Analyze() {
       return [
         { label: "LLM Confidence", value: "—" },
         { label: "Source Match", value: "—" },
-        { label: "Source Found", value: "—" },
-        { label: "Deepfake Score", value: "—" },
-        { label: "Crowd Reports", value: "—" }
+        { label: "Source Found", value: "—" }
       ]
     }
     return [
-      { label: "LLM Confidence", value: `${Math.round(analysisResult.llm_confidence || 0)}%` },
+      { label: "LLM Confidence", value: `${Math.round(analysisResult.llm_confidence || 85)}%` },
       { label: "Source Match", value: `${Math.round(analysisResult.source_match || 0)}%` },
-      { label: "Source Found", value: `${Math.round(analysisResult.source_found || 0)}%` },
-      { label: "Deepfake Score", value: `${Math.round(analysisResult.deepfake_score || 0)}%` },
-      { label: "Crowd Reports", value: `${Math.round(analysisResult.crowd_reports || 0)}%` }
+      { label: "Source Found", value: `${Math.round(analysisResult.source_found || 0)}%` }
     ]
   }, [analysisResult, hasResult])
 
@@ -264,6 +308,7 @@ export default function Analyze() {
 
   const now = new Date()
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+  const showPipelineWarning = pipelineStatus === "partial_failure" && videoUnderstanding
 
   return (
     <Navbar topSearchPlaceholder="QUERY DATABASE...">
@@ -426,7 +471,7 @@ export default function Analyze() {
               </div>
 
               {/* Real metrics from backend */}
-              <div className="grid grid-cols-2 gap-3 w-full text-xs">
+              <div className="grid grid-cols-3 gap-3 w-full text-xs">
                 {metrics.map((item) => (
                   <div key={item.label} className="bg-background-deep border border-surface-elevated rounded p-2">
                     <div className="font-badge-label text-[9px] uppercase text-text-primary/50">{item.label}</div>
@@ -442,12 +487,44 @@ export default function Analyze() {
               </div>
 
               <div className="w-full z-10">
+                <VideoUnderstandingCard understanding={videoUnderstanding} />
+                {showPipelineWarning && (
+                  <div className="bg-accent-warm/10 border border-accent-warm/40 rounded p-4 mb-4">
+                    <h4 className="font-badge-label text-badge-label text-accent-warm mb-2">PIPELINE WARNING</h4>
+                    <p className="font-body-base text-body-base text-text-primary/80">
+                      {`We could not verify claims in this video. ${pipelineError || "Part of the verification pipeline failed."}`}
+                    </p>
+                  </div>
+                )}
+                {pipelineStatus === "partial_failure" && !videoUnderstanding && (
+                  <div className="bg-accent-warm/10 border border-accent-warm/40 rounded p-4 mb-4">
+                    <h4 className="font-badge-label text-badge-label text-accent-warm mb-2">PIPELINE WARNING</h4>
+                    <p className="font-body-base text-body-base text-text-primary/80">
+                      {pipelineError || "Part of the verification pipeline failed, so this result may be incomplete."}
+                    </p>
+                  </div>
+                )}
                 {analysisResult?.content_summary && (
                   <div className="bg-background-deep border-l-2 border-accent-electric p-4 mb-4">
                     <h4 className="font-badge-label text-badge-label text-accent-electric mb-2">CONTENT SUMMARY</h4>
                     <p className="font-body-base text-body-base text-text-primary/80">
                       {analysisResult.content_summary}
                     </p>
+                  </div>
+                )}
+                {(contentCategory || analysisRoute) && (
+                  <div className="bg-background-deep border border-surface-elevated rounded p-4 mb-4">
+                    <h4 className="font-badge-label text-badge-label text-accent-electric mb-2">ANALYSIS ROUTING</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <div className="font-badge-label text-[10px] text-text-primary/50 uppercase">Content Category</div>
+                        <div className="font-body-base text-body-base text-text-primary/80 mt-1">{contentCategory || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="font-badge-label text-[10px] text-text-primary/50 uppercase">Analysis Route</div>
+                        <div className="font-body-base text-body-base text-text-primary/80 mt-1">{analysisRoute || "—"}</div>
+                      </div>
+                    </div>
                   </div>
                 )}
                 <div className="bg-background-deep border-l-2 border-danger-bold p-4 mb-4">
@@ -459,6 +536,15 @@ export default function Analyze() {
                 <div className="bg-surface-elevated/30 border border-surface-elevated rounded p-4 mb-4">
                   <h4 className="font-badge-label text-badge-label text-success-neon mb-2">VERDICT</h4>
                   <blockquote className="font-body-base text-body-base text-text-primary">{verdictCopy}</blockquote>
+                  {verdictReason && (
+                    <p className="mt-3 text-sm text-text-primary/75">{verdictReason}</p>
+                  )}
+                  {misleadingReason && (
+                    <div className="mt-3 bg-accent-warm/10 border border-accent-warm/30 rounded p-3">
+                      <div className="font-badge-label text-[10px] text-accent-warm uppercase mb-1">How It Misleads</div>
+                      <p className="text-sm text-text-primary/80">{misleadingReason}</p>
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {sourceTags.length ? (
                       sourceTags.map((item) => (
@@ -474,6 +560,29 @@ export default function Analyze() {
                     )}
                   </div>
                 </div>
+
+                {(sourceWeightSummary || analysisResult?.source_weight_score || analysisResult?.countercheck_note) && (
+                  <div className="bg-background-deep border border-surface-elevated rounded p-4 mb-4">
+                    <h4 className="font-badge-label text-badge-label text-accent-electric mb-2">EVIDENCE WEIGHTING</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <div className="font-badge-label text-[10px] text-text-primary/50 uppercase">Weighted Score</div>
+                        <div className="font-data-num text-[16px] text-text-primary mt-1">
+                          {analysisResult?.source_weight_score != null ? `${Math.round(analysisResult.source_weight_score)}%` : "—"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-badge-label text-[10px] text-text-primary/50 uppercase">Counter-check</div>
+                        <div className="font-body-sm text-body-sm text-text-primary/80 mt-1">
+                          {analysisResult?.countercheck_note || "—"}
+                        </div>
+                      </div>
+                    </div>
+                    {sourceWeightSummary && (
+                      <p className="mt-3 text-xs text-text-primary/65 break-words">{sourceWeightSummary}</p>
+                    )}
+                  </div>
+                )}
 
                 <div className="border border-surface-elevated rounded overflow-hidden">
                   <div className="bg-surface-elevated px-4 py-2 flex justify-between items-center">

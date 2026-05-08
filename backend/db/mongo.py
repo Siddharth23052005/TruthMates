@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import motor.motor_asyncio
 from dotenv import load_dotenv
+from db.identity import build_analysis_key
 
 load_dotenv()
 
@@ -182,7 +183,7 @@ async def save_validated_posts(posts: list[dict]) -> int:
     """
     Upsert a list of validated output dicts into 'civic_validated'.
 
-    Each post is upserted by its 'claim' field.
+    Each post is upserted by its 'analysis_key' field.
     A 'validated_at' UTC timestamp is added/updated on every write.
 
     Returns the number of documents processed.
@@ -199,10 +200,29 @@ async def save_validated_posts(posts: list[dict]) -> int:
         if not claim:
             continue
 
-        document = {**post, "validated_at": now}
+        analysis_key = (post.get("analysis_key") or "").strip()
+        source_ref = (
+            post.get("source_ref")
+            or post.get("video_url")
+            or post.get("link")
+            or claim
+        )
+        if not analysis_key:
+            analysis_key = build_analysis_key(
+                claim=claim,
+                input_type=post.get("input_type") or "text",
+                source_ref=source_ref,
+            )
+
+        document = {
+            **post,
+            "analysis_key": analysis_key,
+            "source_ref": source_ref,
+            "validated_at": now,
+        }
 
         await collection.update_one(
-            filter={"claim": claim},
+            filter={"analysis_key": analysis_key},
             update={"$set": document},
             upsert=True,
         )
@@ -222,6 +242,19 @@ async def get_monitor_logs(limit: int = 100) -> list[dict]:
     collection = get_db()["agent_monitor_logs"]
     cursor = collection.find().sort("timestamp", -1).limit(limit)
     return [doc async for doc in cursor]
+
+
+async def get_validated_posts(limit: int = 500) -> list[dict]:
+    """Return recent validated posts, newest first."""
+    collection = get_db()["civic_validated"]
+    cursor = collection.find().sort("validated_at", -1).limit(limit)
+    return [doc async for doc in cursor]
+
+
+async def count_validated_posts() -> int:
+    """Return the total number of validated posts."""
+    collection = get_db()["civic_validated"]
+    return await collection.count_documents({})
 
 
 async def ping_db() -> bool:

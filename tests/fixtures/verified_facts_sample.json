@@ -1,0 +1,14 @@
+[
+  {
+    "id": "fact_001",
+    "text": "Aadhaar is proof of identity and not proof of citizenship.",
+    "source_url": "https://uidai.gov.in",
+    "source_tag": "UIDAI-Identity"
+  },
+  {
+    "id": "fact_002",
+    "text": "EVMs used in India are standalone and not connected to the internet.",
+    "source_url": "https://eci.gov.in",
+    "source_tag": "ECI-EVM"
+  }
+]

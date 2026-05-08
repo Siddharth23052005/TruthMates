@@ -1,91 +1,73 @@
-# TruthMates (CivicShield)
+# TruthMates
 
-Multi-agent AI platform that detects, verifies, and counters civic misinformation from text or URLs, with evidence retrieval, trust scoring, and validation.
+TruthMates is a civic misinformation analysis platform with a React/Vite frontend and a FastAPI backend. It supports text claims, video URLs, and audio uploads, then routes each input through classification, evidence retrieval, verdict synthesis, and output validation.
 
-## What It Does
-- Scrapes PIB and MyGov RSS feeds for civic updates.
-- Classifies content as civic or non-civic.
-- Retrieves evidence with Pinecone and Google Fact Check.
-- Generates counter-info statements in English and Hindi with trust scores.
-- Validates outputs for contradictions, source reachability, and trust-score logic.
-- Provides monitoring logs for pipeline health.
+## Current Capabilities
+- Text, video, and audio analysis paths
+- Pre-verification routing for `VERIFY`, `SATIRE_EXIT`, and `OUT_OF_SCOPE_EXIT`
+- Evidence retrieval through Pinecone plus Google Fact Check
+- Human-style verdict synthesis with misleading detection and source weighting
+- MongoDB persistence with stable `analysis_key` identities
+- Structured monitoring endpoints and request-level correlation IDs
 
-## Repo Structure
-- backend: FastAPI + CrewAI orchestration, MongoDB persistence, Pinecone retrieval.
-- frontend: React + Vite + Tailwind UI.
+## Backend
+From `backend/`:
 
-## Quickstart
-
-### Backend
-1) Install dependencies:
 ```bash
-cd backend
 pip install -r requirements.txt
-```
-
-2) Create a .env file with required keys:
-```
-CEREBRAS_API_KEY=...
-TOGETHER_API_KEY=...
-MONGODB_URI=...
-MONGODB_DB_NAME=truthmates
-PIB_RSS_URL=https://www.pib.gov.in/ViewRss.aspx?reg=1&lang=1
-MYGOV_RSS_URL=https://www.mygov.in/rss-feed/
-PINECONE_API_KEY=...
-PINECONE_CLOUD=aws
-PINECONE_REGION=us-east-1
-GOOGLE_FACT_CHECK_API_KEY=...
-```
-
-3) Run the API:
-```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend
+Required configuration is listed in [.env.example](./.env.example).
+
+### Main Endpoints
+- `GET /`
+- `POST /analyze`
+- `POST /analyze-video`
+- `POST /analyze-audio`
+- `POST /scrape`
+- `POST /classify`
+- `POST /verify`
+- `POST /generate`
+- `POST /validate`
+- `GET /monitor/logs`
+- `GET /monitor/status`
+- `GET /monitor/summary`
+
+### API Keys
+- Public routes read `X-API-Key` against `TRUTHMATES_PUBLIC_API_KEY`
+- Admin monitor/pipeline routes read `X-API-Key` against `TRUTHMATES_ADMIN_API_KEY`
+
+## Frontend
+From `frontend/`:
+
 ```bash
-cd frontend
 npm install
 npm run dev
 ```
 
-## API Endpoints
-- GET / : Health check.
-- POST /scrape : Scrape RSS and run full pipeline.
-- POST /classify : Classify posts and run downstream steps.
-- POST /verify : Evidence retrieval, then generate + validate.
-- POST /generate : Counter-info generation, then validate.
-- POST /validate : Output validation.
-- POST /analyze : Analyze a raw claim (no RSS scraping).
-- GET /monitor/logs : Monitoring decisions.
-- GET /monitor/status : Pipeline health.
+Frontend env vars:
+- `VITE_API_BASE_URL`
+- `VITE_PUBLIC_API_KEY`
+- `VITE_ADMIN_API_KEY`
 
-## Example Requests
+## Test Suite
+The repo now includes pytest-based backend coverage under `tests/`.
 
-### Analyze a raw claim
 ```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"claim":"PM Surya Ghar Muft Bijli Yojana provides 300 units free electricity via rooftop solar"}'
+pytest tests -q
 ```
 
-### Scrape RSS feeds
-```bash
-curl -X POST http://localhost:8000/scrape
-```
-
-## LLM Provider
-- Current LLM: Cerebras (model llama3.1-8b, base URL https://api.cerebras.ai/v1).
-- Fallback LLM: Together (model meta-llama/Llama-3.3-70B-Instruct-Turbo, base URL https://api.together.xyz/v1).
+Coverage targets include:
+- schema validation
+- `analysis_key` generation
+- verdict normalization and trust scoring helpers
+- content routing normalization
+- misleading/source-weight post-processing
+- Mongo upsert identity behavior
+- `/analyze`, `/analyze-video`, `/monitor/status`, and `/monitor/summary` route contracts with mocked services
 
 ## Notes
-- /analyze bypasses RSS and uses CivicClassifyTool + EvidenceRetrieveTool directly.
-- Monitoring is skipped during /analyze for counter-info generation and validation.
-- Pinecone retrieval logs index stats, query text, and similarity scores for debugging.
-
-## Troubleshooting
-- Cerebras 429 queue errors mean high traffic. Retry after a short wait.
-- If Pinecone returns no matches, confirm facts are indexed and API key is valid.
-
-## License
-MIT (update if different)
+- Groq remains in use only for Whisper transcription in the media intake layer.
+- Cerebras is the primary LLM provider for reasoning tasks, with Together as fallback.
+- `backend/crew/data/verified_facts.json` is now a broader official-source seed corpus, but it is still a curated local corpus and should continue to be maintained.

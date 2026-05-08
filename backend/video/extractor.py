@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from pathlib import Path
@@ -237,6 +238,76 @@ def _download_audio(url: str, output_dir: str) -> tuple[str, dict]:
     }
 
 
+def _download_video_assets(url: str, output_dir: str) -> tuple[str, str, dict]:
+    """
+    Download the original video and extract a WAV audio track alongside it.
+    Returns (video_file_path, audio_file_path, info_dict).
+    """
+    import yt_dlp
+
+    info_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": SOCKET_TIMEOUT_SECONDS,
+    }
+
+    with yt_dlp.YoutubeDL(info_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    if info is None:
+        raise RuntimeError("yt-dlp could not extract video information.")
+
+    duration = info.get("duration")
+    title = info.get("title", "Unknown")
+
+    if duration is not None and duration > MAX_DURATION_SECONDS:
+        mins, secs = divmod(int(duration), 60)
+        raise ValueError(
+            f"Video too long ({mins}m {secs}s). Max allowed: 10 minutes."
+        )
+
+    video_template = os.path.join(output_dir, "source.%(ext)s")
+    download_opts = {
+        "format": "bestvideo+bestaudio/best",
+        "outtmpl": video_template,
+        "merge_output_format": "mp4",
+        "keepvideo": True,
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "wav",
+                "preferredquality": "192",
+            }
+        ],
+        "match_filter": yt_dlp.utils.match_filter_func("duration <= 600"),
+        "socket_timeout": SOCKET_TIMEOUT_SECONDS,
+        "quiet": True,
+        "no_warnings": True,
+    }
+
+    with yt_dlp.YoutubeDL(download_opts) as ydl:
+        ydl.download([url])
+
+    video_path = _find_video_file(output_dir)
+    audio_path = _find_audio_file(output_dir)
+    if video_path is None:
+        raise RuntimeError("Video download failed - no playable video file produced.")
+    if audio_path is None:
+        raise RuntimeError("Audio extraction failed - no .wav file produced.")
+
+    file_size = os.path.getsize(audio_path)
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"Audio file too large ({file_size // (1024*1024)}MB). "
+            f"Max: {MAX_FILE_SIZE_BYTES // (1024*1024)}MB."
+        )
+
+    return video_path, audio_path, {
+        "title": title,
+        "duration_seconds": int(duration) if duration else None,
+    }
+
+
 def _find_audio_file(directory: str) -> str | None:
     """Find the first .wav file in the directory."""
     for f in Path(directory).iterdir():
@@ -246,6 +317,20 @@ def _find_audio_file(directory: str) -> str | None:
     for f in Path(directory).iterdir():
         if f.suffix in (".mp3", ".m4a", ".ogg", ".flac", ".webm"):
             return str(f)
+    return None
+
+
+def _find_video_file(directory: str) -> str | None:
+    """Find the downloaded video file in the directory."""
+    preferred_suffixes = (".mp4", ".webm", ".mkv", ".mov", ".m4v")
+    files = list(Path(directory).iterdir())
+    for suffix in preferred_suffixes:
+        for path in files:
+            if path.suffix.lower() == suffix and not path.name.startswith("audio"):
+                return str(path)
+    for path in files:
+        if path.suffix.lower() not in (".wav", ".mp3", ".m4a", ".ogg", ".flac"):
+            return str(path)
     return None
 
 
@@ -261,6 +346,108 @@ def _validate_transcript(transcript: str, language: str) -> None:
             f"Could not extract meaningful speech from this video. "
             f"Only {len(words)} words detected (minimum: {MIN_TRANSCRIPT_WORDS})."
         )
+
+
+def _language_warning(language: str) -> str | None:
+    if language not in SUPPORTED_LANGUAGES:
+        return (
+            f"Detected language '{language}' is not in the primary "
+            f"supported set ({', '.join(SUPPORTED_LANGUAGES)}). "
+            f"Claim extraction may be less accurate."
+        )
+    return None
+
+
+def _meaningful_word_count(transcript: str) -> int:
+    return len([w for w in transcript.split() if len(w) > 1])
+
+
+def cleanup_artifacts(temp_dir: str | None) -> None:
+    if temp_dir and os.path.isdir(temp_dir):
+        for child in Path(temp_dir).iterdir():
+            if child.is_file():
+                try:
+                    child.unlink()
+                except OSError:
+                    pass
+        try:
+            Path(temp_dir).rmdir()
+        except OSError:
+            pass
+
+
+def extract_video_artifacts(url: str, *, validate: bool = True) -> dict:
+    """
+    Download video, preserve the local video file, and return partial transcript metadata.
+
+    Returns:
+        {
+            "temp_dir": str,
+            "video_path": str,
+            "audio_path": str,
+            "transcript": str | None,
+            "language": str,
+            "title": str,
+            "duration_seconds": int | None,
+            "language_warning": str | None,
+            "word_count": int,
+            "transcript_valid": bool,
+            "transcript_validation_error": str | None,
+            "transcript_error": str | None,
+        }
+    """
+    if validate:
+        url = validate_url(url)
+
+    tmp_dir = tempfile.mkdtemp(prefix="truthmates_video_")
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_download_video_assets, url, tmp_dir)
+            try:
+                video_path, audio_path, video_info = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
+            except FutureTimeout as exc:
+                raise RuntimeError(
+                    f"Video download timed out after {DOWNLOAD_TIMEOUT_SECONDS} seconds."
+                ) from exc
+
+        transcript = None
+        language = "unknown"
+        transcript_error = None
+        transcript_validation_error = None
+        word_count = 0
+
+        try:
+            whisper_result = _transcribe_audio(audio_path)
+            transcript = (whisper_result.get("transcript") or "").strip()
+            language = (whisper_result.get("language") or "unknown").strip() or "unknown"
+            word_count = _meaningful_word_count(transcript)
+            try:
+                _validate_transcript(transcript, language)
+                transcript_valid = True
+            except ValueError as exc:
+                transcript_valid = False
+                transcript_validation_error = str(exc)
+        except Exception as exc:
+            transcript_valid = False
+            transcript_error = str(exc)
+
+        return {
+            "temp_dir": tmp_dir,
+            "video_path": video_path,
+            "audio_path": audio_path,
+            "transcript": transcript,
+            "language": language,
+            "title": video_info["title"],
+            "duration_seconds": video_info["duration_seconds"],
+            "language_warning": _language_warning(language),
+            "word_count": word_count,
+            "transcript_valid": transcript_valid,
+            "transcript_validation_error": transcript_validation_error,
+            "transcript_error": transcript_error,
+        }
+    except Exception:
+        cleanup_artifacts(tmp_dir)
+        raise
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -283,45 +470,23 @@ def extract_transcript(url: str) -> dict:
         ValueError: On URL validation, duration, or transcript quality issues.
         RuntimeError: On download or transcription failures.
     """
-    # Step 1: Validate URL
-    url = validate_url(url)
-
-    # Step 2: Download and transcribe inside a temp directory (guaranteed cleanup)
-    with tempfile.TemporaryDirectory(prefix="truthmates_video_") as tmp_dir:
-        # Download with timeout
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_download_audio, url, tmp_dir)
-            try:
-                audio_path, video_info = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
-            except FutureTimeout:
-                raise RuntimeError(
-                    f"Video download timed out after {DOWNLOAD_TIMEOUT_SECONDS} seconds."
-                )
-
-        # Transcribe
-        whisper_result = _transcribe_audio(audio_path)
-        transcript = whisper_result["transcript"]
-        language = whisper_result["language"]
-
-        # Validate transcript quality
-        _validate_transcript(transcript, language)
-
-        # Language warning (non-fatal)
-        language_warning = None
-        if language not in SUPPORTED_LANGUAGES:
-            language_warning = (
-                f"Detected language '{language}' is not in the primary "
-                f"supported set ({', '.join(SUPPORTED_LANGUAGES)}). "
-                f"Claim extraction may be less accurate."
-            )
-
+    assets = extract_video_artifacts(url)
+    try:
+        transcript_error = assets["transcript_error"]
+        transcript_validation_error = assets["transcript_validation_error"]
+        if transcript_error:
+            raise RuntimeError(transcript_error)
+        if transcript_validation_error:
+            raise ValueError(transcript_validation_error)
         return {
-            "transcript": transcript,
-            "language": language,
-            "title": video_info["title"],
-            "duration_seconds": video_info["duration_seconds"],
-            "language_warning": language_warning,
+            "transcript": assets["transcript"] or "",
+            "language": assets["language"],
+            "title": assets["title"],
+            "duration_seconds": assets["duration_seconds"],
+            "language_warning": assets["language_warning"],
         }
+    finally:
+        cleanup_artifacts(assets.get("temp_dir"))
 
 
 def transcribe_audio_file(file_path: str) -> dict:

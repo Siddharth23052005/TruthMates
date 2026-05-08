@@ -12,6 +12,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from models.schemas import VideoUnderstanding
+
 
 # ── Agent 1: Video Analyst Output ────────────────────────────────────────────
 
@@ -86,6 +88,7 @@ class PoCReport(BaseModel):
     video: VideoInfo
     summary: str
     claims: list[VerifiedClaim]
+    video_understanding: Optional[VideoUnderstanding] = None
 
 
 class PoCError(BaseModel):
