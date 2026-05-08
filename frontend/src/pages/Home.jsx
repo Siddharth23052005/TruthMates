@@ -1,339 +1,134 @@
-import { useCallback, useEffect, useState } from "react"
-import { Link } from "react-router-dom"
-import Particles from "@tsparticles/react"
-import { loadSlim } from "@tsparticles/slim"
-import {
-  Activity,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  Target,
-  Waves,
-  Webhook
-} from "lucide-react"
-import Footer from "../components/Footer"
-import TrustScoreBadge from "../components/TrustScoreBadge"
-
-const statPills = [
-  {
-    label: "10K+ Claims Analyzed",
-    icon: Target
-  },
-  {
-    label: "94% Accuracy",
-    icon: Sparkles
-  },
-  {
-    label: "8 Languages Supported",
-    icon: Waves
-  }
-]
-
-const protocolSteps = [
-  {
-    id: 1,
-    title: "Submit",
-    description: "Paste text, forward WhatsApp message, or upload audio/video",
-    icon: Webhook
-  },
-  {
-    id: 2,
-    title: "Analyze",
-    description: "10 AI agents verify your claim against official sources",
-    icon: Activity
-  },
-  {
-    id: 3,
-    title: "Get Truth",
-    description: "Receive a verified counter-statement with trust score",
-    icon: ShieldCheck
-  }
-]
-
-const agentCards = [
-  {
-    name: "Web Scraper",
-    description: "Crawls global news endpoints for claim origins."
-  },
-  {
-    name: "Deepfake Detector",
-    description: "Analyzes media artifacts for manipulation."
-  },
-  {
-    name: "Propagation Analyst",
-    description: "Maps social network spread velocity."
-  },
-  {
-    name: "Historical Matcher",
-    description: "Checks against debunked claim database."
-  },
-  {
-    name: "Legal Context",
-    description: "Verifies claims against statutory laws."
-  },
-  {
-    name: "Evidence Retriever",
-    description: "Scours trusted databases for corroboration."
-  },
-  {
-    name: "Context Analyzer",
-    description: "Evaluates historical precedence and framing."
-  },
-  {
-    name: "Source Verifier",
-    description: "Ranks publisher credibility and domain trust."
-  },
-  {
-    name: "Sentiment Engine",
-    description: "Detects emotional manipulation patterns."
-  },
-  {
-    name: "Final Arbiter",
-    description: "Synthesizes agent outputs into a verdict."
-  }
-]
-
-const liveFeed = [
-  {
-    time: "14:02:45",
-    claim: "New tax law to confiscate all savings accounts over 1M...",
-    verdict: "REFUTED"
-  },
-  {
-    time: "14:02:38",
-    claim: "Video showing protests outside national assembly today...",
-    verdict: "UNVERIFIED"
-  },
-  {
-    time: "14:02:10",
-    claim: "Official government portal offline due to cyberattack...",
-    verdict: "SUPPORTED"
-  },
-  {
-    time: "14:01:55",
-    claim: "Water supply contaminated with industrial chemicals in Sector 4...",
-    verdict: "REFUTED"
-  }
-]
-
-const particlesOptions = {
-  background: {
-    color: "#080810"
-  },
-  fullScreen: {
-    enable: false
-  },
-  fpsLimit: 60,
-  interactivity: {
-    events: {
-      onHover: {
-        enable: true,
-        mode: "repulse"
-      },
-      resize: true
-    },
-    modes: {
-      repulse: {
-        distance: 120,
-        duration: 0.4
-      }
-    }
-  },
-  particles: {
-    color: {
-      value: ["#ffffff", "#6C00FF"]
-    },
-    links: {
-      color: "#6C00FF",
-      distance: 140,
-      enable: true,
-      opacity: 0.6,
-      width: 1.4
-    },
-    move: {
-      direction: "none",
-      enable: true,
-      outModes: {
-        default: "out"
-      },
-      speed: 0.6
-    },
-    number: {
-      density: {
-        enable: true,
-        area: 900
-      },
-      value: 120
-    },
-    opacity: {
-      value: 1
-    },
-    size: {
-      value: {
-        min: 2,
-        max: 4
-      }
-    }
-  },
-  detectRetina: true
-}
+import { ChevronDown } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import IntroOverlay from "../components/IntroOverlay"
 
 export default function Home() {
-  const [seconds, setSeconds] = useState(15)
-  const particlesInit = useCallback(async (engine) => {
-    await loadSlim(engine)
-  }, [])
+  const videoRef = useRef(null)
+  const [opacity, setOpacity] = useState(0)
+  const [introFinished, setIntroFinished] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds((value) => (value <= 1 ? 15 : value - 1))
-    }, 1000)
-
-    return () => clearInterval(timer)
+    // Check if intro was already seen this session
+    const seen = sessionStorage.getItem("intro_seen")
+    if (seen) {
+      setIntroFinished(true)
+    }
   }, [])
 
-  const counter = `00:${String(seconds).padStart(2, "0")}`
+  const handleIntroComplete = () => {
+    setIntroFinished(true)
+    sessionStorage.setItem("intro_seen", "1")
+  }
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    let frameId
+
+    const checkTime = () => {
+      if (!video) return
+      const t = video.currentTime
+      const d = video.duration || 10 // fallback if duration isn't loaded yet
+      const fadeTime = 0.5
+
+      if (t < fadeTime) {
+        setOpacity(t / fadeTime)
+      } else if (d - t < fadeTime) {
+        setOpacity(Math.max(0, (d - t) / fadeTime))
+      } else {
+        setOpacity(1)
+      }
+
+      frameId = requestAnimationFrame(checkTime)
+    }
+
+    const startLoop = () => {
+      frameId = requestAnimationFrame(checkTime)
+    }
+
+    const handleEnded = () => {
+      setOpacity(0)
+      setTimeout(() => {
+        if (video) {
+          video.currentTime = 0
+          video.play().catch(console.error)
+        }
+      }, 100)
+    }
+
+    video.addEventListener("loadedmetadata", startLoop)
+    video.addEventListener("ended", handleEnded)
+
+    if (video.readyState >= 1) {
+      startLoop()
+    }
+
+    video.play().catch(console.error)
+
+    return () => {
+      cancelAnimationFrame(frameId)
+      if (video) {
+        video.removeEventListener("loadedmetadata", startLoop)
+        video.removeEventListener("ended", handleEnded)
+      }
+    }
+  }, [])
+
+  const logos = ["Vortex", "Nimbus", "Prysma", "Cirrus", "Kynder", "Halcyn"]
+  const marqueeLogos = [...logos, ...logos] // Duplicated for seamless loop
 
   return (
-    <div className="bg-background-deep text-text-primary min-h-screen flex flex-col">
-      <main className="flex-grow">
-        <section className="min-h-screen relative flex items-center justify-center overflow-hidden border-b border-surface-elevated pt-20 pb-20">
-          <Particles className="absolute inset-0 z-0" options={particlesOptions} init={particlesInit} />
-          <div className="absolute inset-0 z-0 bg-gradient-to-b from-transparent to-background-deep opacity-60"></div>
-          <div className="relative z-10 w-full max-w-7xl px-container-padding flex flex-col items-center text-center gap-6">
-            <h1 className="font-hero-display text-hero-display text-white max-w-4xl tracking-tight">
-              Every Lie Has a Timer.
-            </h1>
-            <div className="text-accent-electric tabular-nums text-5xl sm:text-6xl lg:text-7xl font-data-num tracking-[0.2em]">
-              {counter}
-            </div>
-            <p className="font-body-base text-body-base text-on-surface-variant italic text-sm sm:text-base">
-              हर झूठ का एक वक्त होता है।
-            </p>
-            <p className="font-body-base text-body-base text-on-surface-variant max-w-2xl mt-4">
-              TruthMates detects, verifies and counters civic misinformation before it spreads.
-            </p>
-            <div className="flex flex-wrap gap-4 mt-8 justify-center">
-              <Link
-                to="/analyze"
-                className="bg-accent-electric text-white font-badge-label text-badge-label px-8 py-4 rounded hover:opacity-90 transition-opacity flex items-center gap-2"
-              >
-                Try It Now <span aria-hidden="true">→</span>
-              </Link>
-              <a
-                href="#protocol"
-                className="bg-transparent text-text-primary font-badge-label text-badge-label px-8 py-4 rounded border border-surface-elevated hover:bg-surface-elevated transition-colors"
-              >
-                See How It Works
-              </a>
-            </div>
-            <div className="w-full max-w-4xl h-px bg-surface-elevated/60 shadow-[0_0_12px_rgba(94,43,255,0.45)] mt-10"></div>
-            <div className="flex flex-wrap justify-center gap-6 mt-10 w-full max-w-4xl">
-              {statPills.map((pill) => {
-                const Icon = pill.icon
-                return (
-                  <div
-                    key={pill.label}
-                    className="bg-surface-base border border-surface-elevated px-8 py-4 rounded flex items-center gap-3 shadow-[0_0_14px_rgba(94,43,255,0.25)]"
-                  >
-                    <Icon className="h-5 w-5 text-success-neon" />
-                    <span className="font-data-num text-[16px] text-white">{pill.label}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </section>
+    <div
+      className="min-h-screen flex flex-col font-geist-sans relative overflow-hidden"
+      style={{ backgroundColor: "hsl(var(--background))", color: "hsl(var(--foreground))" }}
+    >
+      {/* Background Video */}
+      <div className="absolute inset-0 w-full h-full z-0 overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_065045_c44942da-53c6-4804-b734-f9e07fc22e08.mp4"
+          className="absolute inset-0 w-full h-full object-cover"
+          muted
+          playsInline
+          style={{ opacity, transition: "opacity 0.1s linear" }}
+        />
+      </div>
 
-        <section id="protocol" className="py-28 px-container-padding bg-surface-base border-b border-surface-elevated">
-          <div className="max-w-7xl mx-auto">
-            <h2 className="font-headline-lg text-headline-lg text-white mb-12 text-center">Protocol Operation</h2>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 relative">
-              <div className="hidden md:block absolute top-1/2 left-0 w-full h-[1px] bg-surface-elevated -z-10"></div>
-              {protocolSteps.map((step, index) => {
-                const Icon = step.icon
-                return (
-                  <div key={step.id} className="flex items-center w-full">
-                    <div className="bg-background-deep border border-surface-elevated p-6 rounded flex flex-col items-center text-center gap-4 flex-1 relative">
-                      <div className="w-12 h-12 rounded-full bg-surface-elevated flex items-center justify-center border border-accent-electric shadow-[0_0_20px_rgba(94,43,255,0.2)]">
-                        <Icon className="h-5 w-5 text-accent-electric" />
-                      </div>
-                      <h3 className="font-headline-md text-white text-lg">
-                        {step.id}. {step.title}
-                      </h3>
-                      <p className="font-body-sm text-body-sm text-on-surface-variant">
-                        {step.description}
-                      </p>
-                    </div>
-                    {index < protocolSteps.length - 1 && (
-                      <span className="hidden md:inline-flex text-surface-elevated text-2xl ml-4">›</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </section>
+      {/* Blurred Overlay Shape */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[984px] h-[527px] opacity-90 bg-gray-950 blur-[82px] pointer-events-none z-0"></div>
 
-        <section className="py-28 px-container-padding bg-background-deep border-b border-surface-elevated overflow-hidden">
-          <div className="max-w-7xl mx-auto mb-12 flex justify-between items-end">
-            <div>
-              <h2 className="font-headline-lg text-headline-lg text-white">Meet the Intelligence Behind TruthMates</h2>
-              <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">Active verification pipeline.</p>
-            </div>
-          </div>
-          <div className="flex overflow-x-auto gap-4 pb-8 snap-x hide-scrollbar">
-            {agentCards.map((agent) => (
-              <div
-                key={agent.name}
-                className="min-w-[280px] bg-surface-base border border-surface-elevated p-6 rounded snap-start shrink-0 flex flex-col gap-4"
-              >
-                <div className="flex justify-between items-center">
-                  <span className="text-accent-electric text-3xl">◆</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-success-neon shadow-[0_0_10px_#00F5A0] animate-pulse"></div>
-                    <span className="font-badge-label text-badge-label text-success-neon">ACTIVE</span>
-                  </div>
-                </div>
-                <h3 className="font-headline-md text-headline-md text-white mt-4">{agent.name}</h3>
-                <p className="font-body-sm text-body-sm text-on-surface-variant">{agent.description}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+      {!introFinished && <IntroOverlay onComplete={handleIntroComplete} />}
 
-        <section className="py-28 px-container-padding bg-surface-base border-b border-surface-elevated">
-          <div className="max-w-7xl mx-auto">
-            <h2 className="font-headline-lg text-headline-lg text-white mb-8">Live Claims Being Analyzed Right Now</h2>
-            <div className="bg-background-deep border border-surface-elevated rounded overflow-hidden">
-              <div className="font-terminal-log text-terminal-log text-on-surface-variant p-4 border-b border-surface-elevated bg-[#1A1A2E] flex justify-between">
-                <span>TERMINAL_OUTPUT // LIVE_STREAM</span>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-accent-electric animate-pulse"></div>
-                  <span>SYNCING</span>
-                </div>
-              </div>
-              <div className="p-6 font-terminal-log text-terminal-log text-white">
-                <div className="overflow-hidden ticker-mask">
-                  <div className="flex gap-6 animate-ticker w-max">
-                    {[...liveFeed, ...liveFeed].map((item, index) => (
-                      <div
-                        key={`${item.time}-${index}`}
-                        className="flex items-center gap-4 border border-surface-elevated bg-surface-base/40 px-4 py-2 rounded"
-                      >
-                        <span className="text-on-surface-variant">[{item.time}]</span>
-                        <span className="max-w-[260px] truncate">{item.claim}</span>
-                        <TrustScoreBadge verdict={item.verdict} className="text-[9px]" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-      <Footer variant="home" />
+      {/* Content wrapper */}
+      <div className={`relative z-10 flex flex-col min-h-screen transition-opacity duration-1000 ${introFinished ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        {/* Hero Main Content */}
+        <main className="flex-1 flex flex-col items-center justify-center text-center px-4">
+          <h1 className="font-general-sans font-normal text-[120px] md:text-[220px] leading-[1.02] tracking-[-0.024em] whitespace-nowrap">
+            <span style={{ color: "hsl(var(--foreground))" }}>Truth </span>
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: "linear-gradient(to left, #5052e0ff, #5555f7ff, #4dcdfcff)" }}
+            >
+              Mates 
+            </span>
+          </h1>
+          <p
+            className="text-lg leading-8 max-w-md mt-[9px] opacity-80 whitespace-pre-line"
+            style={{ color: "hsl(var(--hero-sub))" }}
+          >
+            {"The most powerful AI ever deployed\nin talent acquisition"}
+          </p>
+          <button 
+            onClick={() => navigate("/analyze")}
+            className="bg-[hsl(var(--foreground))]/10 hover:bg-[hsl(var(--foreground))]/20 text-[hsl(var(--foreground))] backdrop-blur-md border border-[hsl(var(--foreground))]/10 transition-colors rounded-full px-[29px] py-[24px] mt-[25px] font-medium text-lg flex items-center justify-center"
+          >
+            Try it out
+          </button>
+        </main>
+      </div>
     </div>
   )
 }
