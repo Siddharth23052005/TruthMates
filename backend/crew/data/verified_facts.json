@@ -418,5 +418,65 @@
     "text": "State-specific government announcements for Karnataka should be verified through official state channels or PIB regional releases",
     "source_url": "https://pib.gov.in",
     "source_tag": "PIB-Karnataka-StateBulletin"
+  },
+  {
+    "id": "politics_fact_001",
+    "text": "The Governor of a state is appointed by the President of India and acts as the constitutional head of the state",
+    "source_url": "https://www.india.gov.in",
+    "source_tag": "GoI-ConstitutionalAuthority"
+  },
+  {
+    "id": "politics_fact_002",
+    "text": "India has a multi-party system with national and state parties recognized by the Election Commission of India",
+    "source_url": "https://www.eci.gov.in",
+    "source_tag": "ECI-PartySystem"
+  },
+  {
+    "id": "politics_fact_003",
+    "text": "State Assembly elections and by-elections are conducted and overseen by the Election Commission of India",
+    "source_url": "https://www.eci.gov.in",
+    "source_tag": "ECI-StateElections"
+  },
+  {
+    "id": "politics_fact_004",
+    "text": "No political party or leader can unilaterally change the Indian constitution without parliamentary procedure",
+    "source_url": "https://www.india.gov.in",
+    "source_tag": "GoI-ConstitutionalProcess"
+  },
+  {
+    "id": "politics_fact_005",
+    "text": "The Indian Armed Forces maintain political neutrality and are governed by the Ministry of Defence",
+    "source_url": "https://www.mod.gov.in",
+    "source_tag": "MoD-ArmedForces"
+  },
+  {
+    "id": "politics_fact_006",
+    "text": "Claims about political leaders or parties should be verified through official press releases and PIB fact checks",
+    "source_url": "https://pib.gov.in/FactCheck.aspx",
+    "source_tag": "PIB-PoliticalFactCheck"
+  },
+  {
+    "id": "politics_fact_007",
+    "text": "The Chief Minister is the head of government in a state and is appointed by the Governor based on majority support in the state legislature",
+    "source_url": "https://www.india.gov.in",
+    "source_tag": "GoI-ChiefMinister"
+  },
+  {
+    "id": "politics_fact_008",
+    "text": "Central government schemes benefits are distributed irrespective of the political party governing a particular state",
+    "source_url": "https://pib.gov.in",
+    "source_tag": "PIB-SchemeDistribution"
+  },
+  {
+    "id": "politics_fact_009",
+    "text": "Communal violence statistics and incidents should be verified through National Crime Records Bureau data and official police reports",
+    "source_url": "https://ncrb.gov.in",
+    "source_tag": "NCRB-CrimeData"
+  },
+  {
+    "id": "politics_fact_010",
+    "text": "Census and demographic data for India are published by the Registrar General and Census Commissioner of India",
+    "source_url": "https://censusindia.gov.in",
+    "source_tag": "Census-Demographics"
   }
 ]

@@ -243,13 +243,13 @@ def describe_from_transcript(
 
     if language != "unknown":
         return TranscriptResult(
-            description=f"Video in {language} with no extractable speech content",
+            description=f"This video contains no extractable speech or dialogue. Background audio detected appears to be related to {language.upper()}.",
             detected_language=language,
             confidence=0.05,
         )
 
     return TranscriptResult(
-        description=f"Video of {duration_seconds:.0f} seconds with no detectable speech",
+        description=f"This {duration_seconds:.0f}-second video contains no detectable speech, dialogue, or extractable audio content.",
         detected_language="unknown",
         confidence=0.05,
     )

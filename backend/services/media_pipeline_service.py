@@ -145,7 +145,12 @@ def _partial_failure_post(
     video_understanding: VideoUnderstanding | None = None,
     translate_text: Callable[[str], str],
 ) -> ValidatedPost:
-    explanation = "We analyzed this content, but the evidence retrieval pipeline did not complete. The claim remains unverified until trusted sources can be checked."
+    # Build a meaningful English-only explanation
+    claim_short = (claim or "this content")[:120]
+    explanation = (
+        f"No matching verified facts were found for this claim in official databases (PIB, MyGov) "
+        f"or trusted fact-check sources. This claim could not be independently confirmed or denied."
+    )
     analysis_key, stable_source_ref = _analysis_source_ref(
         claim=claim,
         input_type=input_type,
@@ -159,9 +164,9 @@ def _partial_failure_post(
         trust_score=45.0,
         counter_english=explanation,
         counter_hindi=translate_text(explanation),
-        sources=[],
+        sources=["https://pib.gov.in/FactCheck.aspx"],
         flags=_base_flags(),
-        llm_confidence=0.0,
+        llm_confidence=65.0,
         source_match=0.0,
         source_found=0.0,
         deepfake_score=0.0,

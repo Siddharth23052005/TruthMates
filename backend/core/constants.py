@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-EVIDENCE_MATCH_THRESHOLD = 0.50
+EVIDENCE_MATCH_THRESHOLD = 0.35
 MEDIA_ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".webm"}
 
 MEDIA_ANALYSIS_ROUTE_VERIFY = "VERIFY"

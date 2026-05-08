@@ -301,12 +301,24 @@ def _build_validation_payload(counter_posts: list[CounterInfoPost]) -> dict[str,
     return {"items": items}
 
 
-def _text_exit_post(*, claim: str, verdict: str, explanation: str, content_category: str, analysis_route: str) -> ValidatedPost:
-    analysis_key, source_ref = _analysis_source_ref(claim=claim, input_type="text", source_ref=claim)
+def _text_exit_post(
+    *,
+    claim: str,
+    verdict: str,
+    explanation: str,
+    content_category: str,
+    analysis_route: str,
+    source_ref: str = "",
+) -> ValidatedPost:
+    analysis_key, stable_source_ref = _analysis_source_ref(
+        claim=claim,
+        input_type="text",
+        source_ref=source_ref or claim,
+    )
     return ValidatedPost(
         claim=claim,
         analysis_key=analysis_key,
-        source_ref=source_ref,
+        source_ref=stable_source_ref,
         verdict=verdict,
         trust_score=55.0 if verdict == "SATIRE" else 50.0,
         counter_english=explanation,
@@ -480,10 +492,17 @@ async def monitor_summary_payload(*, request_id: str | None = None) -> MonitorSu
     return response
 
 
-async def analyze_claim(claim: str, *, request_id: str | None = None) -> ValidateResponse:
+async def analyze_claim(
+    claim: str,
+    *,
+    request_id: str | None = None,
+    source_ref: str = "",
+) -> ValidateResponse:
     claim_text = (claim or "").strip()
     if not claim_text:
         raise HTTPException(status_code=422, detail="Claim text is required.")
+
+    source_reference = (source_ref or "").strip()
 
     started = stage_start()
     classification, provider = await asyncio.to_thread(
@@ -510,6 +529,7 @@ async def analyze_claim(claim: str, *, request_id: str | None = None) -> Validat
             explanation="This text reads like satire or parody, so it is not being treated as a literal civic misinformation claim.",
             content_category=classification.content_category,
             analysis_route=classification.analysis_route,
+            source_ref=source_reference,
         )
         await save_validated_posts([post.model_dump()])
         return ValidateResponse(status="success", count=1, posts=[post])
@@ -521,12 +541,20 @@ async def analyze_claim(claim: str, *, request_id: str | None = None) -> Validat
             explanation="This text is outside the civic and government fact-checking scope, so the verification pipeline stopped before evidence retrieval.",
             content_category=classification.content_category,
             analysis_route=classification.analysis_route,
+            source_ref=source_reference,
         )
         await save_validated_posts([post.model_dump()])
         return ValidateResponse(status="success", count=1, posts=[post])
 
     now = datetime.now(timezone.utc)
-    manual_post = CivicPost(title=claim_text, description=claim_text[:_MAX_DESCRIPTION_CHARS], link=f"manual://{uuid4()}", pub_date=None, source="Manual", scraped_at=now)
+    manual_post = CivicPost(
+        title=claim_text,
+        description=claim_text[:_MAX_DESCRIPTION_CHARS],
+        link=source_reference or f"manual://{uuid4()}",
+        pub_date=None,
+        source="Manual",
+        scraped_at=now,
+    )
     posts_json = json.dumps([manual_post.model_dump(mode="json")], ensure_ascii=True)
 
     started = stage_start()
@@ -535,19 +563,54 @@ async def analyze_claim(claim: str, *, request_id: str | None = None) -> Validat
     log_event(logger, "stage_complete", request_id=request_id, stage="classify_tool", duration_ms=stage_duration_ms(started), provider="local_model")
     if not classified_items:
         return ValidateResponse(status="success", count=0, posts=[])
-
-    civic_posts = [ClassifiedPost(**item) for item in classified_items if item.get("label") == "civic"]
+    civic_posts = [ClassifiedPost(**item) for item in classified_items if item.get('label') == 'civic']
     await save_classified_posts([p.model_dump() for p in civic_posts])
     if not civic_posts:
-        return ValidateResponse(status="success", count=0, posts=[])
+        return ValidateResponse(status='success', count=0, posts=[])
 
     started = stage_start()
     evidence_tool = EvidenceRetrieveTool()
     evidence_payload = json.dumps([p.model_dump(mode="json") for p in civic_posts], ensure_ascii=True)
     verified_items = _parse_tool_json(evidence_tool._run(evidence_payload))
     log_event(logger, "stage_complete", request_id=request_id, stage="evidence_tool", duration_ms=stage_duration_ms(started), provider="pinecone_google_factcheck")
+
+    # If evidence retrieval found no matches, short-circuit with a
+    # detailed, claim-specific result instead of running empty data
+    # through counter-info + validation (which produces generic text).
     if not verified_items:
-        return ValidateResponse(status="success", count=0, posts=[])
+        log_event(logger, "evidence_no_matches", request_id=request_id, detail="Short-circuit with detailed unverified result")
+        claim_short = claim_text[:150]
+        explanation = (
+            f"No matching verified facts were found for this claim in official databases (PIB, MyGov) "
+            f"or trusted fact-check sources. This claim could not be independently confirmed or denied."
+        )
+        analysis_key, stable_ref = _analysis_source_ref(
+            claim=claim_text, input_type="text", source_ref=source_reference or claim_text,
+        )
+        post = ValidatedPost(
+            claim=claim_text,
+            analysis_key=analysis_key,
+            source_ref=stable_ref,
+            verdict="INSUFFICIENT_EVIDENCE",
+            trust_score=45.0,
+            counter_english=explanation,
+            counter_hindi=_translate_en_to_hi(explanation),
+            sources=["https://pib.gov.in/FactCheck.aspx", "https://www.eci.gov.in"],
+            flags=_default_validation_flags(),
+            llm_confidence=65.0,
+            source_match=0.0,
+            source_found=0.0,
+            deepfake_score=0.0,
+            crowd_reports=0.0,
+            input_type="text",
+            content_summary=classification.summary or f"Text analyzed: {claim_text[:100]}",
+            content_category=classification.content_category,
+            analysis_route=classification.analysis_route,
+            pipeline_status="no_evidence_match",
+            verdict_reason=f"No verified facts matched this claim in our database. The claim was classified as '{classification.content_category}'.",
+        )
+        await save_validated_posts([post.model_dump()])
+        return ValidateResponse(status="success", count=1, posts=[post])
 
     verified_posts = [
         VerifiedPost(

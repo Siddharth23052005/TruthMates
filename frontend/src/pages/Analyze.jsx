@@ -83,7 +83,16 @@ export default function Analyze() {
     setErrorMessage("")
 
     try {
-      const response = await apiClient.post("/analyze", { claim: trimmedClaim })
+      // Detect if input is a video URL
+      const videoUrlPattern = /^https?:\/\/.*(youtube\.com\/watch|youtu\.be\/|youtube\.com\/shorts|vimeo\.com\/|dailymotion\.com\/video|\.mp4|\.webm|\.mov)/i
+      const isVideoUrl = videoUrlPattern.test(trimmedClaim)
+
+      let response
+      if (isVideoUrl) {
+        response = await apiClient.post("/analyze-video", { url: trimmedClaim })
+      } else {
+        response = await apiClient.post("/analyze", { claim: trimmedClaim })
+      }
       const posts = response?.data?.posts || []
       if (!posts.length) { setErrorMessage("No claim was returned for this input."); return }
       setAnalysisResult(posts[0])
@@ -119,7 +128,7 @@ export default function Analyze() {
                <Search className="h-5 w-5 text-on-surface-variant mr-3 mt-1" />
                <textarea 
                   className="flex-1 bg-transparent resize-none outline-none text-text-primary placeholder:text-on-surface-variant/50 min-h-[100px]" 
-                  placeholder="Enter a news headline or message..." 
+                  placeholder="Enter a news headline, message, or paste a YouTube video link..." 
                   value={claimText}
                   onChange={(e) => setClaimText(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -175,12 +184,44 @@ export default function Analyze() {
                       </p>
                     </div>
 
-                    <div>
-                      <h4 className="text-sm font-semibold text-text-primary mb-2">Analysis Details</h4>
-                      <p className="text-text-primary leading-relaxed">
-                        {isLoading ? "Generating verdict..." : (analysisResult?.counter_english || analysisResult?.verdict_reason || "Detailed analysis not available.")}
-                      </p>
-                    </div>
+                    {isLoading ? (
+                      <div>
+                        <h4 className="text-sm font-semibold text-text-primary mb-2">Analysis Details</h4>
+                        <p className="text-text-primary leading-relaxed">Generating verdict...</p>
+                      </div>
+                    ) : hasResult ? (
+                      <div className="flex flex-col gap-5">
+                        <div>
+                          <h4 className="text-sm font-semibold text-text-primary mb-1">Content Description</h4>
+                          <p className="text-text-primary leading-relaxed text-sm">
+                            {analysisResult.content_summary || analysisResult.video_title || (analysisResult.input_type === 'video' ? "Video content analyzed." : "Text claim analyzed.")}
+                          </p>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-text-primary mb-1">Misleading Check</h4>
+                          <p className="text-text-primary leading-relaxed text-sm">
+                            {analysisResult.verdict === "MISLEADING" ? (
+                              <span><span className="font-bold text-warning-bold">⚠️ Yes, it is misleading:</span> {analysisResult.misleading_reason || analysisResult.verdict_reason || analysisResult.counter_english}</span>
+                            ) : analysisResult.verdict === "REFUTED" ? (
+                              <span><span className="font-bold text-danger-bold">❌ False:</span> {analysisResult.verdict_reason || analysisResult.counter_english}</span>
+                            ) : analysisResult.verdict === "SUPPORTED" ? (
+                              <span><span className="font-bold text-success-bold">✅ No, it is not misleading:</span> {analysisResult.verdict_reason || "The content accurately reflects verified facts."}</span>
+                            ) : analysisResult.verdict === "SATIRE" ? (
+                              <span><span className="font-bold text-primary">🎭 Satire:</span> This is parody and not meant to be taken as a factual claim.</span>
+                            ) : analysisResult.verdict === "OUT_OF_SCOPE" ? (
+                              <span><span className="font-bold text-on-surface-variant">⏭️ Out of Scope:</span> Not a civic or political claim.</span>
+                            ) : (
+                              <span><span className="font-bold text-warning-bold">❓ Unverified:</span> {analysisResult.counter_english}</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <h4 className="text-sm font-semibold text-text-primary mb-2">Analysis Details</h4>
+                        <p className="text-text-primary leading-relaxed">Detailed analysis not available.</p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="bg-surface-base border border-surface-elevated rounded-xl p-6 shadow-sm">

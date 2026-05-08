@@ -4,6 +4,7 @@ import Analyze from "./pages/Analyze"
 import CitizenReporter from "./pages/CitizenReporter"
 import Home from "./pages/Home"
 import RumorHeatmap from "./pages/RumorHeatmap"
+import SocialMonitor from "./pages/SocialMonitor"
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
       <Route path="/analyze" element={<Analyze />} />
       <Route path="/rumor-heatmap" element={<RumorHeatmap />} />
       <Route path="/citizen-reporter" element={<CitizenReporter />} />
+      <Route path="/social-monitor" element={<SocialMonitor />} />
       <Route path="/about" element={<About />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

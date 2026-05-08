@@ -18,6 +18,7 @@ from api.routes.health import router as health_router
 from api.routes.media import router as media_router
 from api.routes.monitor import router as monitor_router
 from api.routes.pipeline import router as pipeline_router
+from api.routes.social import router as social_router
 from core.config import get_settings
 from core.logging import configure_logging, get_logger, log_event
 from db.mongo import ping_db
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(monitor_router)
     app.include_router(pipeline_router)
     app.include_router(media_router)
+    app.include_router(social_router)
     return app
 
 
