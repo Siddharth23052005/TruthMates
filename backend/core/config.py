@@ -13,6 +13,9 @@ class Settings:
     public_rate_limit: str
     vision_provider: str
     vision_model: str
+    twilio_account_sid: str
+    twilio_auth_token: str
+    twilio_whatsapp_number: str
 
 
 def _parse_origins(value: str) -> list[str]:
@@ -29,4 +32,7 @@ def get_settings() -> Settings:
         public_rate_limit=os.environ.get("TRUTHMATES_PUBLIC_RATE_LIMIT", "10/minute"),
         vision_provider=os.environ.get("TRUTHMATES_VISION_PROVIDER", "").strip().lower(),
         vision_model=os.environ.get("TRUTHMATES_VISION_MODEL", "").strip(),
+        twilio_account_sid=os.environ.get("TWILIO_ACCOUNT_SID", "").strip(),
+        twilio_auth_token=os.environ.get("TWILIO_AUTH_TOKEN", "").strip(),
+        twilio_whatsapp_number=os.environ.get("TWILIO_WHATSAPP_NUMBER", "").strip(),
     )

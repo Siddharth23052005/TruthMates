@@ -32,7 +32,7 @@ class CivicClassifierCrew:
     def _llm(self) -> LLM:
         if self._llm_provider == "together":
             return LLM(
-                model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                model="together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo",
                 api_key=os.environ["TOGETHER_API_KEY"],
                 base_url="https://api.together.xyz/v1",
                 temperature=0.0,

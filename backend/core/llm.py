@@ -9,7 +9,7 @@ def build_crewai_llm(provider: str = "cerebras", *, temperature: float = 0.0):
 
     if provider == "together":
         return LLM(
-            model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            model="together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo",
             api_key=os.environ["TOGETHER_API_KEY"],
             base_url="https://api.together.xyz/v1",
             temperature=temperature,
