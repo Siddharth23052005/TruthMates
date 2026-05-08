@@ -79,8 +79,8 @@ export default function IntroOverlay({ onComplete }) {
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
-      {/* Blurred background overlay specifically for the intro text to stand out over the video */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+      {/* Pitch black background specifically for the intro text to stand out */}
+      <div className="absolute inset-0 bg-black"></div>
 
       <div className="absolute inset-0 flex items-center justify-center px-6 z-10">
         <AnimatePresence>
