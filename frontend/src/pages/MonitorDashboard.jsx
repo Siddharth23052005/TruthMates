@@ -55,7 +55,7 @@ function verdictBadge(v) {
 
 function StatCard({ label, value, sub, icon: Icon, accent = "text-primary" }) {
   return (
-    <div className="bg-surface-base border border-surface-elevated rounded-xl p-5 flex flex-col gap-2">
+    <div className="surface-card rounded-xl p-5 flex flex-col gap-2">
       <div className="flex items-center gap-2 text-on-surface-variant text-sm font-medium">
         {Icon && <Icon className={`h-4 w-4 ${accent}`} />}
         {label}
@@ -273,7 +273,7 @@ export default function MonitorDashboard() {
 
           {/* ── Top stat cards ── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className={`col-span-2 md:col-span-1 bg-surface-base border rounded-xl p-5 flex flex-col gap-2 ${healthBg(health)}`}>
+            <div className={`col-span-2 md:col-span-1 surface-card border rounded-xl p-5 flex flex-col gap-2 ${healthBg(health)}`}>
               <div className="flex items-center gap-2 text-sm font-medium text-on-surface-variant">
                 <Server className="h-4 w-4" />
                 Pipeline Health
@@ -307,7 +307,7 @@ export default function MonitorDashboard() {
 
           {/* ── Verdicts ── */}
           {!loading && (
-            <div className="bg-surface-base border border-surface-elevated rounded-xl p-6">
+            <div className="surface-card border-surface-elevated rounded-xl p-6">
               <h2 className="text-lg font-bold text-text-primary mb-4">Verdict Distribution</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {["SUPPORTED", "REFUTED", "MISLEADING", "UNVERIFIED"].map(v => (
@@ -322,7 +322,7 @@ export default function MonitorDashboard() {
 
           {/* ── Agent stats table ── */}
           {!loading && agents.length > 0 && (
-            <div className="bg-surface-base border border-surface-elevated rounded-xl overflow-hidden">
+            <div className="surface-card border-surface-elevated rounded-xl overflow-hidden">
               <div className="px-6 py-4 border-b border-surface-elevated">
                 <h2 className="text-lg font-bold text-text-primary">Agent Statistics</h2>
               </div>
@@ -348,7 +348,7 @@ export default function MonitorDashboard() {
           )}
 
           {/* ── Traces table ── */}
-          <div className="bg-surface-base border border-surface-elevated rounded-xl overflow-hidden">
+          <div className="surface-card border-surface-elevated rounded-xl overflow-hidden">
             <div className="px-6 py-4 border-b border-surface-elevated flex items-center justify-between">
               <h2 className="text-lg font-bold text-text-primary">Observability Traces</h2>
               <span className="text-xs text-on-surface-variant">Last 20 · Click a row to expand spans</span>

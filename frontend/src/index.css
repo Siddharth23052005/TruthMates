@@ -1,5 +1,4 @@
-@import url("https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -19,7 +18,7 @@
 
   body {
     margin: 0;
-    font-family: "Geist Sans", "Inter", system-ui, sans-serif;
+    font-family: "Inter", system-ui, sans-serif;
     background-color: #050508;
     background-image: url('./assets/honeycomb-bg.png');
     background-repeat: repeat;
@@ -34,7 +33,7 @@
   h4,
   h5,
   h6 {
-    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-family: "Inter", system-ui, sans-serif;
     letter-spacing: -0.01em;
   }
 
@@ -42,6 +41,53 @@
   .mono {
     font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
       "Courier New", monospace;
+  }
+
+  .text-label {
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .text-caption {
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    font-weight: 400;
+  }
+
+  .text-kpi-number {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 32px;
+    line-height: 1;
+    font-weight: 700;
+  }
+
+  .text-timer-score {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 80px;
+    line-height: 1;
+    font-weight: 800;
+  }
+
+  .text-mono-body {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .text-mono-small {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.4;
   }
 }
 
@@ -87,6 +133,20 @@
 
   .terminal-scroll::-webkit-scrollbar-thumb {
     background: #1a1a2e;
+  }
+
+  .surface-card {
+    background: rgba(7, 10, 18, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(20px);
+  }
+
+  .surface-card-soft {
+    background: rgba(12, 16, 30, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(14px);
   }
 
   .bg-graph-pattern {

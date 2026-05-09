@@ -36,3 +36,5 @@ Thumbs.db
 # Local frontend overrides
 .env.local
 
+# Ignore markdown files
+*.md
