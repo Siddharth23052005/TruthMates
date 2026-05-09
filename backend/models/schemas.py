@@ -56,6 +56,19 @@ class EvidenceMatch(BaseModel):
     source_type: str = Field(..., description="pinecone | google_fact_check")
 
 
+class SourceReference(BaseModel):
+    """Represents a news source or reference website used during verification."""
+
+    title: str = Field(..., description="Title or description of the source")
+    url: str = Field(..., description="URL of the source website")
+    source_type: str = Field(
+        "web", description="Type: pinecone | google_fact_check | official | web"
+    )
+    similarity: Optional[float] = Field(
+        None, description="Similarity score 0-1 if from evidence matching"
+    )
+
+
 class VideoUnderstanding(BaseModel):
     """Best-effort human-readable understanding of uploaded video content."""
 
@@ -164,6 +177,8 @@ class ValidatedPost(BaseModel):
     pipeline_error: Optional[str] = Field(None, description="Error summary when a pipeline stage fails after input intake")
     misleading_reason: Optional[str] = Field(None, description="Specific explanation of how the content misleads, when applicable")
     verdict_reason: Optional[str] = Field(None, description="Human-style explanation for the final verdict")
+    detailed_explanation: Optional[str] = Field(None, description="Thorough human-readable explanation of the claim analysis and findings")
+    source_references: Optional[list[SourceReference]] = Field(None, description="List of news sources and websites used during verification")
     source_weight_score: Optional[float] = Field(0.0, description="Weighted evidence score 0-100")
     source_weight_summary: Optional[str] = Field(None, description="Short summary of the weighted evidence considered")
     countercheck_note: Optional[str] = Field(None, description="Summary of the strongest contradiction considered before final verdict")

@@ -18,7 +18,7 @@ from core.constants import (
 from core.logging import get_logger, log_event, stage_duration_ms, stage_start
 from db.identity import build_analysis_key
 from db.mongo import save_validated_posts
-from models.schemas import ValidateResponse, ValidatedPost, ValidationFlags, VideoUnderstanding
+from models.schemas import SourceReference, ValidateResponse, ValidatedPost, ValidationFlags, VideoUnderstanding
 from services.classification_service import ContentClassification, classify_media_content
 from services.misleading_service import assess_misleading
 from services.source_weighting_service import weighted_evidence_summary
@@ -72,6 +72,98 @@ def _sources_from_matches(matches: list) -> tuple[list[str], float]:
             sources.append(source_url)
         best_similarity = max(best_similarity, similarity)
     return sources, best_similarity
+
+
+def _build_source_references(matches: list) -> list[SourceReference]:
+    """Build a list of SourceReference objects from evidence matches."""
+    refs: list[SourceReference] = []
+    seen_urls: set[str] = set()
+    for match in matches:
+        url = getattr(match, "source_url", "") or ""
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        fact_text = getattr(match, "fact_text", "") or ""
+        source_type = getattr(match, "source_type", "web") or "web"
+        similarity = float(getattr(match, "similarity", 0.0) or 0.0)
+        title = fact_text[:120].strip() if fact_text else url
+        if title and not title.endswith("."):
+            title = title.rstrip() + "..."
+        refs.append(
+            SourceReference(
+                title=title,
+                url=url,
+                source_type=source_type,
+                similarity=round(similarity, 4),
+            )
+        )
+    standard_refs = [
+        ("PIB Fact Check — Official Government Fact Verification", "https://pib.gov.in/FactCheck.aspx", "official"),
+        ("Election Commission of India", "https://www.eci.gov.in", "official"),
+    ]
+    for title, url, stype in standard_refs:
+        if url not in seen_urls:
+            refs.append(SourceReference(title=title, url=url, source_type=stype, similarity=None))
+    return refs
+
+
+def _build_detailed_explanation(
+    *,
+    claim: str,
+    verdict: str,
+    verdict_reason: str,
+    counter_english: str,
+    misleading_reason: str,
+    matches: list,
+    content_summary: str,
+    source_weight_summary: str,
+) -> str:
+    """Build a thorough, human-readable explanation of the claim analysis."""
+    parts: list[str] = []
+    parts.append(f'Claim Analyzed: "{claim[:200]}"')
+    parts.append("")
+    if verdict_reason:
+        parts.append(f"Finding: {verdict_reason}")
+    elif counter_english:
+        explanation = counter_english
+        if explanation.startswith("AI Assessment:"):
+            explanation = explanation[len("AI Assessment:"):].strip()
+        parts.append(f"Finding: {explanation}")
+    parts.append("")
+    if misleading_reason:
+        parts.append(f"Why it may be misleading: {misleading_reason}")
+        parts.append("")
+    evidence_found = []
+    for match in (matches or []):
+        fact = getattr(match, "fact_text", "") or ""
+        sim = float(getattr(match, "similarity", 0.0) or 0.0)
+        src_url = getattr(match, "source_url", "") or ""
+        src_type = getattr(match, "source_type", "") or ""
+        if fact:
+            type_label = "Government DB" if src_type == "pinecone" else "Fact Check" if src_type == "google_fact_check" else "Web"
+            evidence_found.append(f"\u2022 [{type_label}] {fact[:150]} (similarity: {sim:.0%}, source: {src_url})")
+    if evidence_found:
+        parts.append("Evidence Found:")
+        parts.extend(evidence_found)
+        parts.append("")
+    else:
+        parts.append("Evidence: No matching verified facts were found in official databases or trusted fact-check sources.")
+        parts.append("")
+    if source_weight_summary:
+        parts.append(f"Source Analysis: {source_weight_summary}")
+        parts.append("")
+    verdict_labels = {
+        "SUPPORTED": "This claim is SUPPORTED by official sources and verified evidence.",
+        "REFUTED": "This claim is REFUTED \u2014 trusted sources contradict it.",
+        "MISLEADING": "This claim is MISLEADING \u2014 while it may contain partial truths, it distorts the overall picture.",
+        "UNVERIFIED": "This claim is UNVERIFIED \u2014 we could not find enough evidence to confirm or deny it.",
+        "INSUFFICIENT_EVIDENCE": "INSUFFICIENT EVIDENCE \u2014 trusted sources did not provide enough data to verify this claim.",
+        "SATIRE": "This content is identified as SATIRE and is not a literal factual claim.",
+        "OUT_OF_SCOPE": "This content is OUT OF SCOPE for civic fact-checking.",
+    }
+    conclusion = verdict_labels.get(verdict, f"Verdict: {verdict}")
+    parts.append(f"Conclusion: {conclusion}")
+    return "\n".join(parts)
 
 
 def _base_flags() -> ValidationFlags:
@@ -128,6 +220,17 @@ def _exit_post(
         analysis_route=analysis_route,
         pipeline_status="short_circuit",
         video_understanding=video_understanding,
+        detailed_explanation=_build_detailed_explanation(
+            claim=claim,
+            verdict=verdict,
+            verdict_reason=explanation,
+            counter_english=explanation,
+            misleading_reason="",
+            matches=[],
+            content_summary=summary,
+            source_weight_summary="",
+        ),
+        source_references=_build_source_references([]),
     )
 
 
@@ -180,6 +283,17 @@ def _partial_failure_post(
         pipeline_status="partial_failure",
         pipeline_error=error_message,
         video_understanding=video_understanding,
+        detailed_explanation=_build_detailed_explanation(
+            claim=claim,
+            verdict=_INSUFFICIENT_EVIDENCE_VERDICT,
+            verdict_reason=explanation,
+            counter_english=explanation,
+            misleading_reason="",
+            matches=[],
+            content_summary=summary,
+            source_weight_summary="",
+        ),
+        source_references=_build_source_references([]),
     )
 
 
@@ -244,6 +358,7 @@ def _video_claims_to_validated_posts(
             source_ref=video_url or video_title or claim.claim_text,
         )
 
+        sw_summary = weighted_evidence_summary(claim.matches)
         posts.append(
             ValidatedPost(
                 claim=claim.claim_text,
@@ -275,8 +390,19 @@ def _video_claims_to_validated_posts(
                 pipeline_status="complete",
                 misleading_reason=misleading.misleading_reason,
                 verdict_reason=verdict_details.explanation,
+                detailed_explanation=_build_detailed_explanation(
+                    claim=claim.claim_text,
+                    verdict=verdict,
+                    verdict_reason=verdict_details.explanation,
+                    counter_english=correction_en,
+                    misleading_reason=misleading.misleading_reason or "",
+                    matches=claim.matches,
+                    content_summary=getattr(analysis_output, "summary", classification.summary),
+                    source_weight_summary=sw_summary,
+                ),
+                source_references=_build_source_references(claim.matches),
                 source_weight_score=verdict_details.source_weight_score,
-                source_weight_summary=weighted_evidence_summary(claim.matches),
+                source_weight_summary=sw_summary,
                 countercheck_note=verdict_details.countercheck_note,
                 video_understanding=video_understanding,
             )

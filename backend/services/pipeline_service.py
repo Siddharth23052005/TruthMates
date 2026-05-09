@@ -61,6 +61,7 @@ from models.schemas import (
     MonitorLogsResponse,
     MonitorSummaryResponse,
     ScrapeResponse,
+    SourceReference,
     ValidateResponse,
     ValidatedPost,
     ValidationFlags,
@@ -186,6 +187,114 @@ def _sources_from_matches(matches: list) -> list[str]:
         if url and url not in sources:
             sources.append(url)
     return sources
+
+
+def _build_source_references(matches: list) -> list[SourceReference]:
+    """Build a list of SourceReference objects from evidence matches."""
+    refs: list[SourceReference] = []
+    seen_urls: set[str] = set()
+    for match in matches:
+        url = getattr(match, "source_url", "") or ""
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        fact_text = getattr(match, "fact_text", "") or ""
+        source_type = getattr(match, "source_type", "web") or "web"
+        similarity = float(getattr(match, "similarity", 0.0) or 0.0)
+        # Build a meaningful title from the fact text
+        title = fact_text[:120].strip() if fact_text else url
+        if title and not title.endswith("."):
+            title = title.rstrip() + "..."
+        refs.append(
+            SourceReference(
+                title=title,
+                url=url,
+                source_type=source_type,
+                similarity=round(similarity, 4),
+            )
+        )
+    # Add standard reference sources if not already present
+    standard_refs = [
+        ("PIB Fact Check — Official Government Fact Verification", "https://pib.gov.in/FactCheck.aspx", "official"),
+        ("Election Commission of India", "https://www.eci.gov.in", "official"),
+    ]
+    for title, url, stype in standard_refs:
+        if url not in seen_urls:
+            refs.append(SourceReference(title=title, url=url, source_type=stype, similarity=None))
+    return refs
+
+
+def _build_detailed_explanation(
+    *,
+    claim: str,
+    verdict: str,
+    verdict_reason: str,
+    counter_english: str,
+    misleading_reason: str,
+    matches: list,
+    content_summary: str,
+    source_weight_summary: str,
+) -> str:
+    """Build a thorough, human-readable explanation of the claim analysis."""
+    parts: list[str] = []
+
+    # Section 1: What was analyzed
+    parts.append(f"Claim Analyzed: \"{claim[:200]}\"")
+    parts.append("")
+
+    # Section 2: Verdict reasoning
+    if verdict_reason:
+        parts.append(f"Finding: {verdict_reason}")
+    elif counter_english:
+        # Strip the "AI Assessment:" prefix if present
+        explanation = counter_english
+        if explanation.startswith("AI Assessment:"):
+            explanation = explanation[len("AI Assessment:"):].strip()
+        parts.append(f"Finding: {explanation}")
+    parts.append("")
+
+    # Section 3: Misleading details
+    if misleading_reason:
+        parts.append(f"Why it may be misleading: {misleading_reason}")
+        parts.append("")
+
+    # Section 4: Evidence summary
+    evidence_found = []
+    for match in (matches or []):
+        fact = getattr(match, "fact_text", "") or ""
+        sim = float(getattr(match, "similarity", 0.0) or 0.0)
+        src_url = getattr(match, "source_url", "") or ""
+        src_type = getattr(match, "source_type", "") or ""
+        if fact:
+            type_label = "Government DB" if src_type == "pinecone" else "Fact Check" if src_type == "google_fact_check" else "Web"
+            evidence_found.append(f"• [{type_label}] {fact[:150]} (similarity: {sim:.0%}, source: {src_url})")
+    if evidence_found:
+        parts.append("Evidence Found:")
+        parts.extend(evidence_found)
+        parts.append("")
+    else:
+        parts.append("Evidence: No matching verified facts were found in official databases or trusted fact-check sources.")
+        parts.append("")
+
+    # Section 5: Weighted source analysis
+    if source_weight_summary:
+        parts.append(f"Source Analysis: {source_weight_summary}")
+        parts.append("")
+
+    # Section 6: Verdict conclusion
+    verdict_labels = {
+        "SUPPORTED": "This claim is SUPPORTED by official sources and verified evidence.",
+        "REFUTED": "This claim is REFUTED — trusted sources contradict it.",
+        "MISLEADING": "This claim is MISLEADING — while it may contain partial truths, it distorts the overall picture.",
+        "UNVERIFIED": "This claim is UNVERIFIED — we could not find enough evidence to confirm or deny it.",
+        "INSUFFICIENT_EVIDENCE": "INSUFFICIENT EVIDENCE — trusted sources did not provide enough data to verify this claim.",
+        "SATIRE": "This content is identified as SATIRE and is not a literal factual claim.",
+        "OUT_OF_SCOPE": "This content is OUT OF SCOPE for civic fact-checking.",
+    }
+    conclusion = verdict_labels.get(verdict, f"Verdict: {verdict}")
+    parts.append(f"Conclusion: {conclusion}")
+
+    return "\n".join(parts)
 
 
 def _analysis_source_ref(*, claim: str, input_type: str = "text", source_ref: str = "") -> tuple[str, str]:
@@ -336,6 +445,17 @@ def _text_exit_post(
         content_category=content_category,
         analysis_route=analysis_route,
         pipeline_status="short_circuit",
+        detailed_explanation=_build_detailed_explanation(
+            claim=claim,
+            verdict=verdict,
+            verdict_reason=explanation,
+            counter_english=explanation,
+            misleading_reason="",
+            matches=[],
+            content_summary=f"Text input analyzed: {claim[:100]}",
+            source_weight_summary="",
+        ),
+        source_references=_build_source_references([]),
     )
 
 
@@ -610,6 +730,7 @@ async def analyze_claim(
         analysis_key, stable_ref = _analysis_source_ref(
             claim=claim_text, input_type="text", source_ref=source_reference or claim_text,
         )
+        verdict_reason_text = f"No verified facts matched this claim in our database. The claim was classified as '{classification.content_category}'."
         post = ValidatedPost(
             claim=claim_text,
             analysis_key=analysis_key,
@@ -630,7 +751,18 @@ async def analyze_claim(
             content_category=classification.content_category,
             analysis_route=classification.analysis_route,
             pipeline_status="no_evidence_match",
-            verdict_reason=f"No verified facts matched this claim in our database. The claim was classified as '{classification.content_category}'.",
+            verdict_reason=verdict_reason_text,
+            detailed_explanation=_build_detailed_explanation(
+                claim=claim_text,
+                verdict="INSUFFICIENT_EVIDENCE",
+                verdict_reason=verdict_reason_text,
+                counter_english=explanation,
+                misleading_reason="",
+                matches=[],
+                content_summary=classification.summary or f"Text analyzed: {claim_text[:100]}",
+                source_weight_summary="",
+            ),
+            source_references=_build_source_references([]),
         )
         await save_validated_posts([post.model_dump()])
         _trace.final_verdict = "INSUFFICIENT_EVIDENCE"
@@ -946,6 +1078,7 @@ async def run_validate(counter_posts: list[CounterInfoPost], use_monitor: bool =
         dfake = round(_clamp_score(getattr(post, "deepfake_score", 0.0)) * 100, 1)
         crowd = round(_clamp_score(getattr(post, "crowdsource_reports", 0.0)) * 100, 1)
         correction_en = f"{_verdict_assessment(verdict)} {post.correction_en}"
+        sw_summary = weighted_evidence_summary(post.matches)
         validated_posts.append(
             ValidatedPost(
                 claim=post.title,
@@ -968,8 +1101,19 @@ async def run_validate(counter_posts: list[CounterInfoPost], use_monitor: bool =
                 pipeline_status="complete",
                 misleading_reason=misleading.misleading_reason,
                 verdict_reason=verdict_assessment.explanation,
+                detailed_explanation=_build_detailed_explanation(
+                    claim=post.title,
+                    verdict=verdict,
+                    verdict_reason=verdict_assessment.explanation,
+                    counter_english=correction_en,
+                    misleading_reason=misleading.misleading_reason or "",
+                    matches=post.matches,
+                    content_summary=f"Text input analyzed: {post.title[:100]}",
+                    source_weight_summary=sw_summary,
+                ),
+                source_references=_build_source_references(post.matches),
                 source_weight_score=verdict_assessment.source_weight_score,
-                source_weight_summary=weighted_evidence_summary(post.matches),
+                source_weight_summary=sw_summary,
                 countercheck_note=verdict_assessment.countercheck_note,
             )
         )

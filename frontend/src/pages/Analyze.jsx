@@ -4,7 +4,7 @@ import Footer from "../components/Footer"
 import Navbar from "../components/Navbar"
 import TrustScoreBadge from "../components/TrustScoreBadge"
 import { apiBaseUrl, apiClient } from "../lib/api"
-import { Search, Mic } from "lucide-react"
+import { Search, Mic, ExternalLink, FileText, BookOpen, Globe, Shield, Database } from "lucide-react"
 
 const idleSteps = [
   { id: "01", label: "01. Civic Classifier", status: "waiting" },
@@ -235,6 +235,97 @@ export default function Analyze() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Detailed Explanation Section */}
+                  {hasResult && analysisResult.detailed_explanation && (
+                    <div className="bg-surface-base border border-surface-elevated rounded-xl p-6 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <FileText className="h-4 w-4 text-primary" />
+                        <h3 className="font-badge-label text-text-primary/60 uppercase text-sm">Detailed Explanation</h3>
+                      </div>
+                      <div className="space-y-3">
+                        {analysisResult.detailed_explanation.split("\n").map((line, idx) => {
+                          if (!line.trim()) return null
+                          // Section headers (e.g. "Finding:", "Evidence Found:", "Conclusion:")
+                          const isHeader = /^(Claim Analyzed:|Finding:|Why it may be misleading:|Evidence Found:|Evidence:|Source Analysis:|Conclusion:)/i.test(line.trim())
+                          const isBullet = line.trim().startsWith("\u2022") || line.trim().startsWith("-")
+                          if (isHeader) {
+                            const [label, ...rest] = line.split(":")
+                            const content = rest.join(":")
+                            return (
+                              <div key={idx} className="mt-2">
+                                <span className="text-xs font-bold uppercase tracking-wider text-primary/80">{label}</span>
+                                {content && <p className="text-sm text-text-primary leading-relaxed mt-1">{content.trim()}</p>}
+                              </div>
+                            )
+                          }
+                          if (isBullet) {
+                            return (
+                              <div key={idx} className="flex items-start gap-2 pl-2">
+                                <span className="text-primary mt-0.5 text-xs">●</span>
+                                <p className="text-sm text-on-surface-variant leading-relaxed flex-1">{line.trim().replace(/^[\u2022\-]\s*/, "")}</p>
+                              </div>
+                            )
+                          }
+                          return <p key={idx} className="text-sm text-text-primary leading-relaxed">{line}</p>
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Source References Section */}
+                  {hasResult && analysisResult.source_references && analysisResult.source_references.length > 0 && (
+                    <div className="bg-surface-base border border-surface-elevated rounded-xl p-6 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <BookOpen className="h-4 w-4 text-primary" />
+                        <h3 className="font-badge-label text-text-primary/60 uppercase text-sm">Related Sources & References</h3>
+                      </div>
+                      <div className="space-y-3">
+                        {analysisResult.source_references.map((ref, idx) => {
+                          const typeConfig = {
+                            pinecone: { icon: Database, label: "Government DB", color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20" },
+                            google_fact_check: { icon: Shield, label: "Fact Check", color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20" },
+                            official: { icon: Shield, label: "Official", color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20" },
+                            web: { icon: Globe, label: "Web", color: "text-slate-400", bg: "bg-slate-400/10", border: "border-slate-400/20" },
+                          }
+                          const config = typeConfig[ref.source_type] || typeConfig.web
+                          const IconComponent = config.icon
+                          return (
+                            <a
+                              key={idx}
+                              href={ref.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="group flex items-start gap-3 p-3 rounded-lg border border-surface-elevated hover:border-primary/30 hover:bg-primary/5 transition-all duration-200"
+                            >
+                              <div className={`flex-shrink-0 p-1.5 rounded-md ${config.bg} border ${config.border}`}>
+                                <IconComponent className={`h-3.5 w-3.5 ${config.color}`} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-text-primary group-hover:text-primary transition-colors line-clamp-2 leading-snug">
+                                  {ref.title}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${config.bg} ${config.color}`}>
+                                    {config.label}
+                                  </span>
+                                  {ref.similarity != null && (
+                                    <span className="text-[10px] text-on-surface-variant">
+                                      {Math.round(ref.similarity * 100)}% match
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-on-surface-variant truncate max-w-[200px]">
+                                    {ref.url.replace(/^https?:\/\//, "").split("/")[0]}
+                                  </span>
+                                </div>
+                              </div>
+                              <ExternalLink className="h-3.5 w-3.5 text-on-surface-variant group-hover:text-primary transition-colors flex-shrink-0 mt-0.5" />
+                            </a>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                 </div>
 
