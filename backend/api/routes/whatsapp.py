@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, Response
 from api.deps import limiter, require_public_api_key
 from core.config import get_settings
 from core.logging import get_logger, log_event
+from db.mongo import get_db
 from services.pipeline_service import analyze_claim, analyze_video_url
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
@@ -191,6 +192,62 @@ async def whatsapp_webhook(
         message_body=Body[:200] + "..." if len(Body) > 200 else Body,
         sender=From,
     )
+
+    # ── Admin STATUS shortcut ───────────────────────────────────────────────────
+    settings = get_settings()
+    sender = From.replace("whatsapp:", "").strip()
+
+    if settings.twilio_admin_number and sender == settings.twilio_admin_number and Body.strip().upper() == "STATUS":
+        log_event(logger, "whatsapp_admin_status_request", request_id=request_id, sender=From)
+        try:
+            db = get_db()
+            # Collect agent pass/fail counts
+            logs_cursor = db["agent_monitor_logs"].find()
+            agent_map: dict[str, dict] = {}
+            last_run_ts: str | None = None
+            async for log in logs_cursor:
+                name = (log.get("agent_name") or "unknown").strip()
+                if name not in agent_map:
+                    agent_map[name] = {"passed": 0, "failed": 0}
+                status_str = (log.get("status") or "").upper()
+                if status_str == "PASS":
+                    agent_map[name]["passed"] += 1
+                else:
+                    agent_map[name]["failed"] += 1
+                ts = log.get("timestamp")
+                if ts:
+                    ts_s = ts if isinstance(ts, str) else ts.isoformat()
+                    if last_run_ts is None or ts_s > last_run_ts:
+                        last_run_ts = ts_s
+
+            total_agents = len(agent_map)
+            passing_agents = sum(1 for v in agent_map.values() if v["failed"] == 0)
+
+            if not agent_map:
+                pipeline_health = "down"
+            elif all(v["failed"] == 0 for v in agent_map.values()):
+                pipeline_health = "healthy"
+            elif any(v["failed"] > v["passed"] for v in agent_map.values()):
+                pipeline_health = "down"
+            else:
+                pipeline_health = "degraded"
+
+            total_claims = await db["civic_validated"].count_documents({})
+
+            status_msg = (
+                f"TruthMates Status\n"
+                f"Health: {pipeline_health}\n"
+                f"Claims Today: {total_claims}\n"
+                f"Agents: {passing_agents}/{total_agents} passing\n"
+                f"Last Run: {last_run_ts or 'N/A'}"
+            )
+        except Exception as exc:
+            logger.error(f"[{request_id}] Admin status fetch failed: {exc}")
+            status_msg = "TruthMates Status: error fetching dashboard data."
+
+        resp = MessagingResponse()
+        resp.message(status_msg)
+        return Response(content=str(resp), media_type="application/xml")
 
     # Detect URL in the message
     detected_url = _extract_url_from_message(Body)

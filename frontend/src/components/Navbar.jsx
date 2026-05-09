@@ -1,11 +1,11 @@
 import { NavLink } from "react-router-dom"
-import { Shield, SearchCheck, Mic, Map, Radio, Info } from "lucide-react"
+import { Shield, SearchCheck, AlertTriangle, LayoutDashboard, Mic, Radio, Info } from "lucide-react"
 
 const navItems = [
   { label: "Analyze", to: "/analyze", icon: SearchCheck },
   { label: "Citizen Reporter", to: "/citizen-reporter", icon: Mic },
-  { label: "Rumor Heatmap", to: "/rumor-heatmap", icon: Map },
   { label: "Social Monitor", to: "/social-monitor", icon: Radio },
+  { label: "Monitor", to: "/monitor", icon: LayoutDashboard },
   { label: "Trending", to: "/trending", icon: AlertTriangle },
   { label: "About", to: "/about", icon: Info }
 ]

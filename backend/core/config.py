@@ -16,6 +16,7 @@ class Settings:
     twilio_account_sid: str
     twilio_auth_token: str
     twilio_whatsapp_number: str
+    twilio_admin_number: str
 
 
 def _parse_origins(value: str) -> list[str]:
@@ -35,4 +36,5 @@ def get_settings() -> Settings:
         twilio_account_sid=os.environ.get("TWILIO_ACCOUNT_SID", "").strip(),
         twilio_auth_token=os.environ.get("TWILIO_AUTH_TOKEN", "").strip(),
         twilio_whatsapp_number=os.environ.get("TWILIO_WHATSAPP_NUMBER", "").strip(),
+        twilio_admin_number=os.environ.get("TWILIO_ADMIN_NUMBER", "").strip(),
     )

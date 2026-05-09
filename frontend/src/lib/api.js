@@ -24,3 +24,8 @@ export const socialApi = {
   triggerCrawl: (params) => adminApiClient.post("/social/crawl", null, { params }),
   getStats: () => adminApiClient.get("/social/stats"),
 }
+
+// Monitoring & observability helpers
+export const getMonitorDashboard = () => adminApiClient.get("/monitor/dashboard")
+export const getObservabilityTraces = () => adminApiClient.get("/observability/traces")
+export const getTraceDetail = (id) => adminApiClient.get(`/observability/traces/${id}`)

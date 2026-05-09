@@ -69,6 +69,7 @@ from models.schemas import (
 )
 from services.classification_service import classify_media_content
 from services.misleading_service import assess_misleading
+from services.observability_service import TraceContext, flush_trace
 from services.source_weighting_service import weighted_evidence_summary
 from services.verdict_service import assess_verdict, is_overly_hedged
 
@@ -504,12 +505,21 @@ async def analyze_claim(
 
     source_reference = (source_ref or "").strip()
 
+    # Observability trace context — wraps each stage
+    _trace = TraceContext(claim_text)
+
     started = stage_start()
+    _span_classify = _trace.begin_span("content_classifier", {"claim": claim_text, "input_type": "text"})
     classification, provider = await asyncio.to_thread(
         classify_media_content,
         claim_text,
         title=claim_text,
         input_type="text",
+    )
+    _trace.end_span(
+        _span_classify,
+        {"content_category": classification.content_category, "analysis_route": classification.analysis_route, "provider": provider},
+        status="pass",
     )
     log_event(
         logger,
@@ -532,6 +542,9 @@ async def analyze_claim(
             source_ref=source_reference,
         )
         await save_validated_posts([post.model_dump()])
+        _trace.final_verdict = "SATIRE"
+        _trace.trust_score = float(post.trust_score or 0.0)
+        await flush_trace(_trace)
         return ValidateResponse(status="success", count=1, posts=[post])
 
     if classification.analysis_route == MEDIA_ANALYSIS_ROUTE_OUT_OF_SCOPE_EXIT:
@@ -544,6 +557,9 @@ async def analyze_claim(
             source_ref=source_reference,
         )
         await save_validated_posts([post.model_dump()])
+        _trace.final_verdict = "OUT_OF_SCOPE"
+        _trace.trust_score = float(post.trust_score or 0.0)
+        await flush_trace(_trace)
         return ValidateResponse(status="success", count=1, posts=[post])
 
     now = datetime.now(timezone.utc)
@@ -558,20 +574,28 @@ async def analyze_claim(
     posts_json = json.dumps([manual_post.model_dump(mode="json")], ensure_ascii=True)
 
     started = stage_start()
+    _span_civic = _trace.begin_span("civic_classifier_tool", {"posts_count": 1})
     classifier_tool = CivicClassifyTool()
     classified_items = _parse_tool_json(classifier_tool._run(posts_json))
+    _trace.end_span(_span_civic, {"classified_count": len(classified_items)}, status="pass" if classified_items else "fail")
     log_event(logger, "stage_complete", request_id=request_id, stage="classify_tool", duration_ms=stage_duration_ms(started), provider="local_model")
     if not classified_items:
+        _trace.final_verdict = "UNCLASSIFIED"
+        await flush_trace(_trace)
         return ValidateResponse(status="success", count=0, posts=[])
     civic_posts = [ClassifiedPost(**item) for item in classified_items if item.get('label') == 'civic']
     await save_classified_posts([p.model_dump() for p in civic_posts])
     if not civic_posts:
+        _trace.final_verdict = "NOT_CIVIC"
+        await flush_trace(_trace)
         return ValidateResponse(status='success', count=0, posts=[])
 
     started = stage_start()
+    _span_evidence = _trace.begin_span("evidence_retriever_tool", {"civic_posts_count": len(civic_posts)})
     evidence_tool = EvidenceRetrieveTool()
     evidence_payload = json.dumps([p.model_dump(mode="json") for p in civic_posts], ensure_ascii=True)
     verified_items = _parse_tool_json(evidence_tool._run(evidence_payload))
+    _trace.end_span(_span_evidence, {"verified_count": len(verified_items)}, status="pass" if verified_items else "fail")
     log_event(logger, "stage_complete", request_id=request_id, stage="evidence_tool", duration_ms=stage_duration_ms(started), provider="pinecone_google_factcheck")
 
     # If evidence retrieval found no matches, short-circuit with a
@@ -579,7 +603,6 @@ async def analyze_claim(
     # through counter-info + validation (which produces generic text).
     if not verified_items:
         log_event(logger, "evidence_no_matches", request_id=request_id, detail="Short-circuit with detailed unverified result")
-        claim_short = claim_text[:150]
         explanation = (
             f"No matching verified facts were found for this claim in official databases (PIB, MyGov) "
             f"or trusted fact-check sources. This claim could not be independently confirmed or denied."
@@ -610,6 +633,9 @@ async def analyze_claim(
             verdict_reason=f"No verified facts matched this claim in our database. The claim was classified as '{classification.content_category}'.",
         )
         await save_validated_posts([post.model_dump()])
+        _trace.final_verdict = "INSUFFICIENT_EVIDENCE"
+        _trace.trust_score = 45.0
+        await flush_trace(_trace)
         return ValidateResponse(status="success", count=1, posts=[post])
 
     verified_posts = [
@@ -628,7 +654,21 @@ async def analyze_claim(
     )
     await save_verified_posts([p.model_dump() for p in verified_posts])
     counter_posts = await run_generate(VerifyResponse(status="manual", count=len(verified_posts), posts=verified_posts), use_monitor=False, request_id=request_id)
-    return await run_validate(counter_posts, use_monitor=False, request_id=request_id)
+    result = await run_validate(counter_posts, use_monitor=False, request_id=request_id)
+
+    # Finalise observability trace with the outcome of the full pipeline
+    if result.posts:
+        first_post = result.posts[0]
+        _trace.final_verdict = getattr(first_post, "verdict", "")
+        _trace.trust_score = float(getattr(first_post, "trust_score", 0.0) or 0.0)
+        flags_obj = getattr(first_post, "flags", None)
+        if flags_obj is not None:
+            try:
+                _trace.flags = flags_obj.model_dump() if hasattr(flags_obj, "model_dump") else dict(flags_obj)
+            except Exception:
+                _trace.flags = {}
+    await flush_trace(_trace)
+    return result
 
 
 async def scrape_pipeline(*, request_id: str | None = None) -> ValidateResponse:
@@ -714,7 +754,43 @@ async def run_generate(verify_response: VerifyResponse, use_monitor: bool = True
     posts_json = json.dumps(trimmed_posts, ensure_ascii=True)
 
     async def _run_counter_info():
-        result = await _kickoff_with_retry(crew_instance.crew, {"posts_json": posts_json}, fallback_factory=fallback_instance.crew, request_id=request_id, stage="generate")
+        # 5-second pre-delay to avoid hitting rate limits on an already-busy LLM
+        await asyncio.sleep(5)
+        inputs = {"posts_json": posts_json}
+        # Exponential backoff specific to counter_info: 5s → 10s → 20s → 40s → 80s
+        _ci_max_retries = 5
+        _ci_base_delay = 5
+        retries = 0
+        last_exc: Exception | None = None
+        while retries <= _ci_max_retries:
+            try:
+                result = await _kickoff_with_retry(
+                    crew_instance.crew,
+                    inputs,
+                    fallback_factory=fallback_instance.crew,
+                    request_id=request_id,
+                    stage="generate",
+                )
+                break  # success
+            except Exception as exc:
+                last_exc = exc
+                if retries < _ci_max_retries and (_is_rate_limit_error(str(exc)) or _is_queue_error(str(exc))):
+                    delay = _ci_base_delay * (2 ** retries)  # 5, 10, 20, 40, 80
+                    log_event(
+                        logger,
+                        "counter_info_backoff",
+                        request_id=request_id,
+                        retry=retries + 1,
+                        delay_seconds=delay,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(delay)
+                    retries += 1
+                else:
+                    raise
+        if last_exc and retries > _ci_max_retries:
+            raise last_exc
+
         raw_text = result.raw if hasattr(result, "raw") else str(result)
         clean_text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`")
         try:
@@ -728,6 +804,7 @@ async def run_generate(verify_response: VerifyResponse, use_monitor: bool = True
         if not isinstance(data, list):
             raise HTTPException(status_code=502, detail="Generator output is not a JSON array.")
         return data
+
 
     fallback_generation = False
     try:

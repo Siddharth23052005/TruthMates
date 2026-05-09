@@ -3,7 +3,7 @@ import About from "./pages/About"
 import Analyze from "./pages/Analyze"
 import CitizenReporter from "./pages/CitizenReporter"
 import Home from "./pages/Home"
-import RumorHeatmap from "./pages/RumorHeatmap"
+import MonitorDashboard from "./pages/MonitorDashboard"
 import SocialMonitor from "./pages/SocialMonitor"
 import Trending from "./pages/Trending"
 
@@ -15,6 +15,7 @@ export default function App() {
       <Route path="/trending" element={<Trending />} />
       <Route path="/citizen-reporter" element={<CitizenReporter />} />
       <Route path="/social-monitor" element={<SocialMonitor />} />
+      <Route path="/monitor" element={<MonitorDashboard />} />
       <Route path="/about" element={<About />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

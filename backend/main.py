@@ -23,6 +23,7 @@ from api.deps import limiter
 from api.routes.health import router as health_router
 from api.routes.media import router as media_router
 from api.routes.monitor import router as monitor_router
+from api.routes.observability import router as observability_router
 from api.routes.pipeline import router as pipeline_router
 from api.routes.social import router as social_router
 from api.routes.whatsapp import router as whatsapp_router
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(monitor_router)
+    app.include_router(observability_router)
     app.include_router(pipeline_router)
     app.include_router(media_router)
     app.include_router(social_router)
