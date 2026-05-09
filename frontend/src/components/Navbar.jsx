@@ -1,6 +1,9 @@
 import { NavLink } from "react-router-dom"
 import { Shield, SearchCheck, AlertTriangle, LayoutDashboard, Mic, Radio, Info } from "lucide-react"
+<<<<<<< Updated upstream
 import { Shield, SearchCheck, Mic, Radio, Info, AlertTriangle } from "lucide-react"
+=======
+>>>>>>> Stashed changes
 
 const navItems = [
   { label: "Analyze", to: "/analyze", icon: SearchCheck },
